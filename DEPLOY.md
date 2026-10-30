@@ -8,8 +8,8 @@ About 30 minutes. Everything here is a one-time setup. Scheduled for Tuesday, No
 Done: `ruben879/contract-desk`, branch `main`. Import this repo in Vercel.
 
 ## 2. Supabase (a new project, separate from Rock Solid)
-1. New project. Pick the region closest to Vercel's default (US East) so reads stay fast.
-2. SQL Editor: run `supabase/migrations/0001_phase1_schema.sql`, then `0002_v3_phase1.sql`, then `0003_routing_slots.sql`, in that order.
+1. Done Oct 30: project ref `mnzdlonnpggedektqbud`, region us-east-2 (Ohio). `vercel.json` pins the app's functions to Vercel's Cleveland region (`cle1`), next door to the database, so every page and read stays fast.
+2. **Still to do, before the first sign-in:** SQL Editor: run `supabase/migrations/0001_phase1_schema.sql`, then `0002_v3_phase1.sql`, then `0003_routing_slots.sql`, in that order.
 3. Authentication > URL Configuration: Site URL = your Vercel URL. Add `https://YOUR-APP.vercel.app/auth/callback` to Redirect URLs.
 4. Project Settings > API: copy the URL, the anon key, and the service_role key.
 
@@ -25,8 +25,8 @@ Import the repo. Add these environment variables, then deploy:
 | Name | Value |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | from Supabase |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | from Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | from Supabase (keep secret) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the **legacy anon key** (starts `eyJ`), not the `sb_publishable_` key |
+| `SUPABASE_SERVICE_ROLE_KEY` | the legacy **service_role** key (keep secret) |
 | `ANTHROPIC_API_KEY` | from console.anthropic.com |
 | `INBOUND_ADDRESS_TEMPLATE` | the Postmark address with `+{token}` before the @, e.g. `abc123def+{token}@inbound.postmarkapp.com` |
 | `INBOUND_WEBHOOK_SECRET` | YOUR_SECRET from step 3 |
