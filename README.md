@@ -41,6 +41,10 @@ Next.js 15 (App Router) on Vercel, Supabase (Postgres, Auth, Storage), Claude fo
 - **What gets extracted:** `lib/extract/schema.ts`. Instructions to the reader: `lib/extract/read-contract.ts`.
 - **App name:** `lib/brand.ts`. **Colors:** top of `app/globals.css`.
 
+## Planned next
+
+Email intake moves from Postmark to Cloudflare after the first live test: see `docs/intake-cloudflare-spec.md`.
+
 ## Setup
 
 Step-by-step deploy and the first live test: see **DEPLOY.md**.
