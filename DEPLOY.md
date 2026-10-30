@@ -1,0 +1,68 @@
+# Deploy and first live test
+
+About 30 minutes. Everything here is a one-time setup. Scheduled for Tuesday, Nov 3 (Ruben with Ren).
+
+**Keys and secrets are entered directly in Supabase and Vercel during that session. They never go in chat, email, or this repo.** `.env.example` lists the names only.
+
+## 1. Code on GitHub
+Done: `ruben879/contract-desk`, branch `main`. Import this repo in Vercel.
+
+## 2. Supabase (a new project, separate from Rock Solid)
+1. New project. Pick the region closest to Vercel's default (US East) so reads stay fast.
+2. SQL Editor: run `supabase/migrations/0001_phase1_schema.sql`, then `0002_v3_phase1.sql`, then `0003_routing_slots.sql`, in that order.
+3. Authentication > URL Configuration: Site URL = your Vercel URL. Add `https://YOUR-APP.vercel.app/auth/callback` to Redirect URLs.
+4. Project Settings > API: copy the URL, the anon key, and the service_role key.
+
+## 3. Postmark (inbound only; the app never sends mail)
+1. Create a server, then open its **Inbound** stream > Settings.
+2. Copy the inbound address (looks like `abc123def@inbound.postmarkapp.com`).
+3. Webhook URL: `https://postmark:YOUR_SECRET@YOUR-APP.vercel.app/api/inbound/email` (make up a long random YOUR_SECRET).
+4. Leave **Include raw email content** OFF (it doubles the payload size).
+
+## 4. Vercel
+Import the repo. Add these environment variables, then deploy:
+
+| Name | Value |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | from Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | from Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | from Supabase (keep secret) |
+| `ANTHROPIC_API_KEY` | from console.anthropic.com |
+| `INBOUND_ADDRESS_TEMPLATE` | the Postmark address with `+{token}` before the @, e.g. `abc123def+{token}@inbound.postmarkapp.com` |
+| `INBOUND_WEBHOOK_SECRET` | YOUR_SECRET from step 3 |
+| `NEXT_PUBLIC_APP_URL` | your Vercel URL |
+
+Fluid compute should be on (it's the default for new projects): reads run in the background for up to 5 minutes.
+
+## 5. Set up the brokerage
+1. Open the app, sign in with your email, create the brokerage.
+2. Settings > Brokerage profile: license number and broker of record. Profile: your TREC license number. (License numbers are how the reader knows which side and which agent.)
+3. Copy your forward-to address from the home screen.
+
+## 6. Live test
+**Before forwarding, check the attachment size.** Postmark sends attachments inside the webhook, and Vercel rejects anything over 4.5 MB, so keep each test email under about 3 MB of attachments.
+
+**A. Executed contract.** Forward it to your address.
+
+| Watch | Expected |
+|---|---|
+| Settings > Recent forwarded emails | Row appears within seconds, then "Started a new deal" |
+| Home | "Reading now", then "ready for you to check" (usually 1 to 2 minutes) |
+| Review screen | Every field filled or flagged. Tap a few "Doc 1, p. N" links: the PDF opens beside the form with the words highlighted |
+| Side and agent | Suggested from license numbers |
+| After Confirm | Key dates with their contract paragraph, checklist with reasons, Documents slots with "Filed by reader" badges |
+
+**B. Amendment for the same property.** Forward it to the same address.
+
+| Watch | Expected |
+|---|---|
+| Recent forwarded emails | "Matched to a deal by address" |
+| Deal page | Next action becomes "Review changes" |
+| Review changes | Old value, new value, source highlight, dates that will shift (old date struck through), tasks added or dropped. "Emailed from ... Matched by property address" with a "Not for this deal" button |
+| After Confirm | Dates moved, a History entry listing the shifts, the amendment in the Amendments slot |
+
+## If something's off
+Send Claude: a screenshot, the row from Recent forwarded emails, and the Vercel log lines that start with `[inbound]` (Vercel > Project > Logs, filter "inbound").
+
+- **Email never appears in Recent forwarded emails:** it was rejected before reaching the app. Postmark > Inbound > Activity shows why (413 = too large, 401 = webhook password mismatch).
+- **Stuck on "Reading":** after 10 minutes it flips to "couldn't read" with a Try again button.
