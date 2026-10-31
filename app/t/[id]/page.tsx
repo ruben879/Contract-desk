@@ -10,6 +10,8 @@ import { Dropzone } from "@/components/Dropzone";
 import { startAddDocuments } from "@/app/actions";
 import { orderedDocs } from "@/lib/docs";
 import { todayIn } from "@/lib/dates";
+import { displayError } from "@/lib/extract/errors";
+import { DiscardDraft } from "@/components/DiscardDraft";
 
 export default async function TransactionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,10 +47,11 @@ export default async function TransactionPage({ params }: { params: Promise<{ id
     return shell(
       <Card className="space-y-4">
         <div className="text-lg font-semibold">We couldn't read this one</div>
-        <p className="text-sm text-muted">{ex?.error ?? "Something went wrong."}</p>
+        <p className="text-sm text-muted">{displayError(ex?.error)}</p>
         <RetryButton id={id} />
         <Dropzone compact then="reread" start={startAddDocuments.bind(null, id, null)}
           label="Add a clearer copy or more of the file" hint="We'll read everything on this deal again." />
+        {!tx.confirmed_at && <DiscardDraft id={id} />}
       </Card>,
     );
   }

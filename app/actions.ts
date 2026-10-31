@@ -1,6 +1,8 @@
 "use server";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requireMember } from "@/lib/context";
 import { isPdf, MAX_FILE_BYTES, storagePath } from "@/lib/intake";
 import { SLOT_KEYS } from "@/lib/slots";
@@ -78,4 +80,22 @@ export async function moveDocument(documentId: string, slot: string) {
   const { supabase } = await requireMember();
   const { data } = await supabase.from("documents").update({ slot, slot_source: "agent" }).eq("id", documentId).select("transaction_id").single();
   if (data?.transaction_id) revalidatePath(`/t/${data.transaction_id}`);
+}
+
+/**
+ * Throw away a deal that was never confirmed (a failed read, a duplicate start). Its documents
+ * and draft reads go with it. Confirmed deals can't be discarded here.
+ */
+export async function discardDraft(transactionId: string) {
+  const { supabase } = await requireMember();
+  const { data: tx } = await supabase.from("transactions").select("id, status, confirmed_at").eq("id", transactionId).maybeSingle();
+  if (!tx) throw new Error("Deal not found.");
+  if (tx.confirmed_at || !["failed", "needs_review"].includes(tx.status)) throw new Error("Only an unconfirmed draft can be discarded.");
+  const admin = supabaseAdmin();
+  const { data: docs } = await admin.from("documents").select("storage_path").eq("transaction_id", tx.id);
+  const paths = (docs ?? []).map((d) => d.storage_path);
+  if (paths.length) await admin.storage.from("documents").remove(paths);
+  await admin.from("transactions").delete().eq("id", tx.id);
+  revalidatePath("/");
+  redirect("/");
 }

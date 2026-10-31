@@ -4,6 +4,7 @@ import { Dropzone } from "@/components/Dropzone";
 import { Card } from "@/components/ui";
 import { startAddDocuments } from "@/app/actions";
 import { mergeDraftInto } from "./merge";
+import { DiscardDraft } from "@/components/DiscardDraft";
 
 /** Another deal already exists at this address: offer to put these documents there instead. */
 export function DuplicateNotice({ draftId, matches }: { draftId: string; matches: { id: string; label: string }[] }) {
@@ -32,6 +33,7 @@ export function AddMoreDocuments({ transactionId, confirmed }: { transactionId: 
       <Dropzone compact then="reread" start={(files) => startAddDocuments(transactionId, null, files)}
         label="Add more of the file"
         hint="Missing an addendum or disclosure? Add it now or any time after you confirm. Adding now re-reads the file, so unsaved edits here are replaced." />
+      <div className="mt-2"><DiscardDraft id={transactionId} /></div>
     </div>
   );
 }

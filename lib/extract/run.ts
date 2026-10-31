@@ -3,8 +3,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { termsFromTx } from "@/lib/terms";
 import { inspectPdf } from "./pdf";
 import { readChanges, readContract, type PdfInput } from "./read-contract";
+import { friendlyReadError, ReaderError } from "./errors";
 
-const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+// The reader accepts requests up to 32 MB, and PDFs grow by a third when encoded, so ~22 MB of PDFs per read.
+const MAX_TOTAL_BYTES = 22 * 1024 * 1024;
 type Db = ReturnType<typeof supabaseAdmin>;
 
 /** Download, inspect (scan or not), and base64 the documents, in the order given. */
@@ -18,10 +20,10 @@ export async function loadPdfs(db: Db, docs: { id: string; file_name: string; st
       await new Promise((r) => setTimeout(r, 3000));
       ({ data: blob, error } = await db.storage.from("documents").download(doc.storage_path));
     }
-    if (error || !blob) throw new Error(`Could not open ${doc.file_name}. If it was still uploading, try again.`);
+    if (error || !blob) throw new ReaderError(`Couldn't open ${doc.file_name}. If it was still uploading, try again.`, error?.message);
     const bytes = new Uint8Array(await blob.arrayBuffer());
     total += bytes.byteLength;
-    if (total > MAX_TOTAL_BYTES) throw new Error("These PDFs are larger than 30 MB combined. Split the packet and try again.");
+    if (total > MAX_TOTAL_BYTES) throw new ReaderError("These documents are more than 22 MB together, too big to read at once. Split the packet into smaller PDFs and add them.");
     const info = await inspectPdf(bytes).catch(() => null);
     await db.from("documents").update({
       page_count: info?.pageCount ?? null, is_scanned: info?.isScanned ?? null, size_bytes: doc.size_bytes ?? bytes.byteLength,
@@ -63,7 +65,7 @@ export async function runExtraction(transactionId: string, depth = 0): Promise<v
     .select("id").single();
 
   try {
-    if (!docs?.length) throw new Error("No documents were found on this transaction.");
+    if (!docs?.length) throw new ReaderError("There are no documents on this deal yet. Add the contract.");
     const { extraction, model } = await readContract(await loadPdfs(db, docs));
     await labelDocuments(db, ids, extraction.documents);
     // An earlier draft read of fewer documents is replaced by this one.
@@ -72,8 +74,9 @@ export async function runExtraction(transactionId: string, depth = 0): Promise<v
     await db.from("extractions").update({ status: "ready", result: extraction, model, finished_at: new Date().toISOString() }).eq("id", ex!.id);
     await db.from("transactions").update({ status: "needs_review", updated_at: new Date().toISOString() }).eq("id", tx.id);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Something went wrong reading this contract.";
-    await db.from("extractions").update({ status: "failed", error: message, finished_at: new Date().toISOString() }).eq("id", ex!.id);
+    const { message, detail } = friendlyReadError(e);
+    console.error("[read] failed", { transactionId, detail });
+    await db.from("extractions").update({ status: "failed", error: message, result: { debug: detail }, finished_at: new Date().toISOString() }).eq("id", ex!.id);
     await db.from("transactions").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", tx.id);
   }
 
@@ -147,7 +150,7 @@ export async function runAmendmentRead(
   try {
     const { data: docs } = await db.from("documents").select("id, file_name, storage_path, size_bytes").in("id", ids).eq("transaction_id", tx.id);
     const ordered = ids.map((id) => docs?.find((d) => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d);
-    if (!ordered.length) throw new Error("No documents were found.");
+    if (!ordered.length) throw new ReaderError("The documents to check weren't found. Add them again.");
 
     const { changes, model } = await readChanges(base, await loadPdfs(db, ordered));
     await labelDocuments(db, ordered.map((d) => d.id), changes.documents);
@@ -164,7 +167,8 @@ export async function runAmendmentRead(
       result: changes, model, finished_at: new Date().toISOString(),
     }).eq("id", ex.id);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Something went wrong reading this document.";
-    await db.from("extractions").update({ status: "failed", error: message, finished_at: new Date().toISOString() }).eq("id", ex.id);
+    const { message, detail } = friendlyReadError(e);
+    console.error("[read] failed", { transactionId, detail });
+    await db.from("extractions").update({ status: "failed", error: message, result: { debug: detail }, finished_at: new Date().toISOString() }).eq("id", ex.id);
   }
 }

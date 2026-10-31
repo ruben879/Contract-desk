@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { routeIntake } from "@/lib/address";
 import { labelDocuments, loadPdfs, readAddedDocuments, runExtraction } from "@/lib/extract/run";
 import { triageDocuments } from "@/lib/extract/read-contract";
+import { friendlyReadError } from "@/lib/extract/errors";
 
 export const MAX_FILE_BYTES = 30 * 1024 * 1024;
 
@@ -127,6 +128,7 @@ export async function processIntakeItem(itemId: string) {
     }
     await sendToSorting(itemId, decision.reason, decision.candidates);
   } catch (e) {
-    await sendToSorting(itemId, `Couldn't read these documents automatically${e instanceof Error && e.message ? ` (${e.message})` : ""}. Look them over and choose where they go.`);
+    console.error("[intake] triage failed", { itemId, detail: friendlyReadError(e).detail });
+    await sendToSorting(itemId, "Couldn't read these documents automatically. Look them over and choose where they go.");
   }
 }

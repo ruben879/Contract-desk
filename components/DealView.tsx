@@ -9,6 +9,7 @@ import { slotsFor, SLOT_RULES } from "@/lib/slots";
 import { termsFromTx } from "@/lib/terms";
 import { daysBetween, formatDate, formatDay, formatShort, formatTime } from "@/lib/dates";
 import { FINANCING_LABELS, type FinancingType } from "@/lib/addenda";
+import { displayError } from "@/lib/extract/errors";
 
 const CONTACT_LABELS: Record<string, string> = {
   buyer: "Buyer", seller: "Seller", listing_agent: "Listing agent", buyer_agent: "Buyer's agent",
@@ -139,7 +140,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
 
       {rereadFailed && (
         <Card className="mt-3 flex items-center justify-between gap-3 border-bad bg-bad-soft text-sm">
-          <span>Couldn't check {docName(rereadFailed.document_ids)} for changes. {rereadFailed.error}</span>
+          <span>Couldn't check {docName(rereadFailed.document_ids)} for changes. {displayError(rereadFailed.error)}</span>
           <RetryRereadButton id={id} documentIds={rereadFailed.document_ids} />
         </Card>
       )}

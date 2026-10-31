@@ -1,6 +1,6 @@
 # Spec: move email intake to Cloudflare
 
-**Status:** approved to build after a clean A/B live test (Ruben, Oct 29, 2026). Postmark stays for the first live test.
+**Status:** approved to build after a clean A/B live test (Ruben, Oct 29, 2026), and it's the first thing after that test. The first real executed contract (Oct 31) was 8.6 MB: fine by direct upload, impossible through Postmark. Postmark stays only for the first live test.
 
 ## Why
 
