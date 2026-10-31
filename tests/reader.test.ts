@@ -55,28 +55,59 @@ describe("structured-output schemas", () => {
   }
 });
 
+// The grammar ceiling isn't documented, so the guard is structural: every schema stays far below
+// the one the API refused on Oct 31 (319 properties, 152 enum values, 39 arrays).
+function weigh(n: any) {
+  const w = { props: 0, enums: 0, arrays: 0 };
+  const walk = (x: any) => {
+    if (!x || typeof x !== "object") return;
+    if (x.properties) { w.props += Object.keys(x.properties).length; Object.values(x.properties).forEach(walk); }
+    if (x.enum) w.enums += x.enum.length;
+    if (x.items) { w.arrays++; walk(x.items); }
+  };
+  walk(n);
+  return w;
+}
+describe("schema size stays far below the refused one", () => {
+  for (const [name, f] of Object.entries({ extractionFormat, changesFormat, triageFormat })) {
+    it(name, () => {
+      const w = weigh(f.schema);
+      expect(w.props).toBeLessThanOrEqual(40);   // refused: 319
+      expect(w.enums).toBeLessThanOrEqual(100);  // refused: 152
+      expect(w.arrays).toBeLessThanOrEqual(8);   // refused: 39
+    });
+  }
+  it("adding contract fields doesn't grow the extraction grammar's structure", () => {
+    expect(weigh(extractionFormat.schema).props).toBeLessThan(30);
+  });
+});
+
 // ---------- 2. Converters ----------
 const loc = { doc: 1, page: 2, quote: "$ 325,000.00", box: [0.6, 0.3, 0.8, 0.33], source: "Para 3C" };
 const none = { doc: 0, page: 0, quote: "", box: [], source: "" };
 function wireAnswer() {
-  const out: any = {};
-  for (const k of FIELD_KEYS) out[k] = { found: false, value: "", confidence: "low", ...none };
-  out.sales_price = { found: true, value: 325000, confidence: "high", ...loc };
-  out.buyers = { found: true, value: ["Jordan Avery"], confidence: "high", ...loc };
-  out.effective_date = { found: false, value: "2026-01-01", confidence: "low", ...none }; // ignored: not found
-  out.financing_type = { found: true, value: "conventional", confidence: "medium", ...loc };
-  out.addenda = [{ key: "third_party_financing", name: "TPF", form_number: "", doc: 1, page: 0, evidence: "attached" }];
-  out.documents = [{ doc: 1, kind: "contract", name: "Contract", slot: "contract" }, { doc: 2, kind: "other", name: "x", slot: "none" }];
-  out.warnings = ["Effective date is blank"];
-  return out;
+  return {
+    fields: [
+      { field: "sales_price", value: "$325,000.00", confidence: "medium", ...none },
+      { field: "sales_price", value: "325000", confidence: "high", ...loc }, // duplicate: higher confidence wins
+      { field: "buyers", value: "Jordan Avery", confidence: "high", ...loc },
+      { field: "financing_type", value: "Conventional", confidence: "medium", ...loc }, // enum casing
+      { field: "property_street", value: "", confidence: "low", ...none }, // empty = not found
+      { field: "not_a_field", value: "x", confidence: "high", ...none }, // ignored
+    ],
+    addenda: [{ key: "third_party_financing", name: "TPF", form_number: "", doc: 1, page: 0, evidence: "attached" }],
+    documents: [{ doc: 1, kind: "contract", name: "Contract", slot: "contract" }, { doc: 2, kind: "other", name: "x", slot: "none" }],
+    warnings: ["Effective date is blank"],
+  };
 }
 
 describe("wire to app shape", () => {
   it("restores nulls and keeps found values", () => {
     const x = ExtractionSchema.parse(extractionFromWire(wireAnswer()));
-    expect(x.sales_price).toMatchObject({ value: 325000, page: 2, source: "Para 3C", box: [0.6, 0.3, 0.8, 0.33] });
-    expect(x.effective_date).toMatchObject({ value: null, page: null, quote: null, box: null, source: null });
-    expect(x.property_street.value).toBeNull(); // "" with found false
+    expect(x.sales_price).toMatchObject({ value: 325000, confidence: "high", page: 2, source: "Para 3C", box: [0.6, 0.3, 0.8, 0.33] });
+    expect(x.financing_type.value).toBe("conventional");
+    expect(x.effective_date).toMatchObject({ value: null, page: null, quote: null, box: null, source: null }); // never mentioned
+    expect(x.property_street.value).toBeNull();
     expect(x.buyers.value).toEqual(["Jordan Avery"]);
     expect(x.addenda[0]).toMatchObject({ form_number: null, page: null, doc: 1 });
     expect(x.documents[1].slot).toBeNull();
@@ -133,6 +164,34 @@ describe("reader request", () => {
     const f = friendlyReadError(err);
     expect(f.message).not.toMatch(/[{}]|invalid_request_error|400/);
     expect(f.detail).toContain("400");
+  });
+});
+
+describe("when the API refuses the schema", () => {
+  beforeEach(() => { calls.length = 0; script = []; });
+  it("reads again without a grammar and validates the plain JSON answer", async () => {
+    const refused = new (Anthropic as any).APIError(400, { type: "error", error: { type: "invalid_request_error", message: GRAMMAR } }, `400 ${GRAMMAR}`, new Headers());
+    script = [() => { throw refused; }, () => msg("```json\n" + JSON.stringify(wireAnswer()) + "\n```")];
+    const { extraction } = await readContract(pdf);
+    expect(extraction.sales_price.value).toBe(325000);
+    expect(calls[0].output_config).toBeDefined();
+    expect(calls[1].output_config).toBeUndefined();
+    expect(calls[1].system).toContain("matching this JSON schema");
+  });
+});
+
+const GRAMMAR = "The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.";
+describe("error wording matches the real cause", () => {
+  const api = (status: number, message: string) =>
+    new (Anthropic as any).APIError(status, { type: "error", error: { type: "invalid_request_error", message } }, `${status} ${message}`, new Headers());
+  it("a grammar error is never presented as a file problem (Oct 31)", () => {
+    const m = friendlyReadError(api(400, GRAMMAR)).message;
+    expect(m).not.toMatch(/too big|split|pages/i);
+    expect(m).toContain("couldn't process this file");
+  });
+  it("real size and page errors still say so", () => {
+    expect(friendlyReadError(api(413, "Request too large")).message).toMatch(/too big/);
+    expect(friendlyReadError(api(400, "A maximum of 100 PDF pages may be provided.")).message).toMatch(/too many pages/);
   });
 });
 

@@ -54,11 +54,6 @@ const FIELDS: Record<FieldKey, [Json, string]> = {
   lender_name: [S, "Lender name if it appears anywhere"],
 };
 
-const fieldWire = (value: Json, description: string) => obj({
-  found: { type: "boolean", description: "False if blank, illegible, or not in the documents. When false, value is ignored." },
-  value, confidence: CONF, ...LOC,
-}, description);
-
 const ADDENDUM = obj({
   key: { type: "string", enum: [...ADDENDUM_KEYS] }, name: S,
   form_number: { type: "string", description: "Form number, or empty" },
@@ -75,12 +70,26 @@ const DOCUMENTS: Json = {
 
 const schemaOf = (properties: Record<string, Json>) => ({ type: "json_schema" as const, schema: obj(properties) });
 
+// One flat list of found fields: the grammar stays the same size however many fields exist.
+// (The per-field version, 319 properties, was refused by the API as "compiled grammar too large".)
 export const extractionFormat = schemaOf({
-  ...Object.fromEntries(FIELD_KEYS.map((k) => [k, fieldWire(FIELDS[k][0], FIELDS[k][1])])),
+  fields: {
+    type: "array",
+    description: "One entry per contract field you found. Leave out fields that are blank, illegible, or not in the documents.",
+    items: obj({
+      field: { type: "string", enum: [...FIELD_KEYS] },
+      value: { type: "string", description: "The value as text: dates YYYY-MM-DD, money and day counts as digits only, several names separated by '; '." },
+      confidence: CONF,
+      ...LOC,
+    }),
+  },
   addenda: { type: "array", description: "Every addendum or form in the packet, plus any addendum box checked in Para 22 that is not attached (evidence: checked_only).", items: ADDENDUM },
   documents: DOCUMENTS,
   warnings: { type: "array", items: S, description: "Anything unclear: blank fields, handwriting you could not read, conflicting values, missing initials." },
 });
+
+/** Field guide for the reader's instructions (descriptions moved out of the grammar). */
+export const FIELD_GUIDE = FIELD_KEYS.map((k) => `- ${k}: ${FIELDS[k][1]}${FIELDS[k][0].enum ? ` (one of: ${(FIELDS[k][0].enum as string[]).join(", ")})` : ""}`).join("\n");
 
 export const changesFormat = schemaOf({
   changes: {
@@ -118,23 +127,41 @@ const loc = (x: any) => ({
 const addendum = (a: any) => ({ ...a, form_number: str(a?.form_number), doc: pos(a?.doc), page: pos(a?.page) });
 const documents = (ds: any) => (Array.isArray(ds) ? ds.map((d) => ({ ...d, slot: d?.slot === "none" ? null : d?.slot })) : []);
 
+const RANK = { high: 3, medium: 2, low: 1 } as const;
+const NUMERIC = new Set(["sales_price", "financed_amount", "earnest_money", "option_fee", "option_period_days", "survey_days"]);
+const LISTS = new Set(["buyers", "sellers"]);
+const ENUMS = new Set(["financing_type", "seller_disclosure"]);
+
+/** Text from the reader -> the field's own type. Bad values are rejected later by the app schema. */
+export function typedValue(field: string, text: string): unknown {
+  const t = text.trim();
+  if (t === "") return null;
+  if (LISTS.has(field)) return t.split(";").map((x) => x.trim()).filter(Boolean);
+  if (NUMERIC.has(field)) { const n = Number(t.replace(/[$,\s]/g, "")); return Number.isFinite(n) ? n : t; }
+  if (ENUMS.has(field)) return t.toLowerCase().replace(/[\s-]+/g, "_");
+  return t;
+}
+
 export function extractionFromWire(raw: any) {
+  const best = new Map<string, any>();
+  for (const f of Array.isArray(raw?.fields) ? raw.fields : []) {
+    if (!f || !FIELD_KEYS.includes(f.field) || typeof f.value !== "string" || f.value.trim() === "") continue;
+    const prev = best.get(f.field);
+    if (!prev || (RANK[f.confidence as keyof typeof RANK] ?? 0) > (RANK[prev.confidence as keyof typeof RANK] ?? 0)) best.set(f.field, f);
+  }
   const out: Record<string, unknown> = {};
   for (const k of FIELD_KEYS) {
-    const f = raw?.[k] ?? {};
-    const empty = f.value === "" || (Array.isArray(f.value) && f.value.length === 0);
-    out[k] = { value: f.found && !empty ? f.value : null, confidence: f.found ? f.confidence : "low", ...loc(f) };
+    const f = best.get(k);
+    out[k] = f
+      ? { value: typedValue(k, f.value), confidence: f.confidence, ...loc(f) }
+      : { value: null, confidence: "low", doc: null, page: null, quote: null, box: null, source: null };
   }
   return { ...out, addenda: (raw?.addenda ?? []).map(addendum), documents: documents(raw?.documents), warnings: raw?.warnings ?? [] };
 }
 
-const NUMERIC = new Set(["sales_price", "financed_amount", "earnest_money", "option_fee", "option_period_days", "survey_days"]);
 export function changesFromWire(raw: any) {
   const changes = (raw?.changes ?? []).map((c: any) => {
-    const text = typeof c?.value_text === "string" ? c.value_text.trim() : "";
-    let value: unknown = text === "" ? null : text;
-    if (value != null && (c.key === "buyers" || c.key === "sellers")) value = text.split(";").map((x: string) => x.trim()).filter(Boolean);
-    else if (value != null && NUMERIC.has(c.key)) value = text.replace(/[$,\s]/g, "");
+    const value = typedValue(c?.key, typeof c?.value_text === "string" ? c.value_text : "");
     return { key: c?.key, value, confidence: c?.confidence, ...loc(c) };
   });
   return { ...raw, changes, addenda_added: (raw?.addenda_added ?? []).map(addendum), documents: documents(raw?.documents) };
