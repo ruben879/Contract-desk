@@ -37,12 +37,18 @@ async function signedUploads(supabase: Awaited<ReturnType<typeof requireMember>>
 export async function startUpload(files: FileMeta[]) {
   checkFiles(files);
   const { supabase, user, member } = await requireMember();
-  const { data: tx, error } = await supabase.from("transactions").insert({
-    brokerage_id: member.brokerage_id, agent_member_id: member.id, created_by: user.id, source: "upload", status: "reading",
-  }).select("id").single();
-  if (error || !tx) throw new Error(error?.message ?? "Could not create the deal.");
-  const uploads = await signedUploads(supabase, member.brokerage_id, tx.id, user.id, files, "upload");
-  return { transactionId: tx.id as string, uploads };
+  // The id is chosen here, not read back with RETURNING: reading back a row in the same statement
+  // that creates it is checked against the select policy, which can't see the unsaved row (Oct 31 bug).
+  const id = randomUUID();
+  const { error } = await supabase.from("transactions").insert({
+    id, brokerage_id: member.brokerage_id, agent_member_id: member.id, created_by: user.id, source: "upload", status: "reading",
+  });
+  if (error) {
+    console.error("[upload] could not create deal", error.message);
+    throw new Error("Couldn't start the deal. Try again, and tell the broker if it keeps happening.");
+  }
+  const uploads = await signedUploads(supabase, member.brokerage_id, id, user.id, files, "upload");
+  return { transactionId: id, uploads };
 }
 
 /** Extra documents on an existing deal. The client then asks for a re-read, which proposes changes for the agent to confirm. */
