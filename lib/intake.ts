@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { routeIntake } from "@/lib/address";
-import { labelDocuments, loadPdfs, runAmendmentRead, runExtraction } from "@/lib/extract/run";
+import { labelDocuments, loadPdfs, readAddedDocuments, runExtraction } from "@/lib/extract/run";
 import { triageDocuments } from "@/lib/extract/read-contract";
 
 export const MAX_FILE_BYTES = 30 * 1024 * 1024;
@@ -58,7 +58,9 @@ type Defer = (task: () => Promise<unknown>) => void;
 export async function attachIntakeToDeal(itemId: string, transactionId: string, sortedBy: string | null, defer?: Defer) {
   const { db, item, docs } = await loadItem(itemId);
   const { data: tx } = await db.from("transactions").select("id, brokerage_id, status").eq("id", transactionId).single();
-  if (!tx || tx.brokerage_id !== item.brokerage_id || tx.status !== "active") throw new Error("That deal isn't active.");
+  // Automatic routing only ever picks active deals; a person sorting may also pick a deal not yet confirmed.
+  const allowed = sortedBy ? ["active", "needs_review", "reading", "failed"] : ["active"];
+  if (!tx || tx.brokerage_id !== item.brokerage_id || !allowed.includes(tx.status)) throw new Error("That deal can't take documents right now.");
 
   await db.from("documents").update({ transaction_id: tx.id }).eq("intake_item_id", itemId).is("transaction_id", null);
   await db.from("intake_items").update({
@@ -69,7 +71,7 @@ export async function attachIntakeToDeal(itemId: string, transactionId: string, 
 
   const review = async () => {
     try {
-      await runAmendmentRead(tx.id, docs.map((d) => d.id), { source: "email", intakeItemId: itemId, waitForRunning: true });
+      await readAddedDocuments(tx.id, docs.map((d) => d.id), { source: "email", intakeItemId: itemId });
     } catch {
       // Couldn't start the review (deal busy). Undo and let a person attach it in a moment.
       await db.from("documents").update({ transaction_id: null }).eq("intake_item_id", itemId).eq("transaction_id", tx.id);

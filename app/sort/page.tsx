@@ -17,10 +17,19 @@ export default async function SortPage() {
 
   const [{ data: items }, { data: deals }, { data: team }] = await Promise.all([
     supabase.from("intake_items").select("*").eq("status", "needs_sorting").order("created_at"),
-    supabase.from("transactions").select("id, property_street, property_city, agent_member_id").eq("status", "active").order("property_street"),
+    supabase.from("transactions").select("id, status, property_street, property_city, agent_member_id").in("status", ["active", "needs_review", "reading", "failed"]).order("property_street"),
     supabase.from("brokerage_members").select("id, full_name, email").eq("brokerage_id", brokerage.id),
   ]);
   const who = (id: string | null) => { const m = team?.find((t) => t.id === id); return m ? m.full_name || m.email : "Unassigned"; };
+  // Deals not yet confirmed have no confirmed address; show what the reader found, marked as a draft.
+  const draftIds = (deals ?? []).filter((d) => d.status !== "active").map((d) => d.id);
+  const { data: drafts } = draftIds.length
+    ? await supabase.from("extractions").select("transaction_id, result").in("transaction_id", draftIds).eq("kind", "initial").eq("status", "ready")
+    : { data: [] };
+  const draftAddr = new Map((drafts ?? []).map((x: any) => [x.transaction_id, x.result?.property_street?.value as string | null]));
+  for (const d of deals ?? []) {
+    if (d.status !== "active") (d as any).property_street = `Draft: ${draftAddr.get(d.id) ?? "address not read yet"}`;
+  }
   const dealById = new Map((deals ?? []).map((d) => [d.id, d]));
 
   const withDocs = await Promise.all((items ?? []).map(async (it) => {
@@ -89,7 +98,7 @@ export default async function SortPage() {
 
               <form action={attachToDeal.bind(null, it.id)} className="flex gap-2">
                 <select name="transaction_id" required defaultValue="" className={inputCls}>
-                  <option value="" disabled>{candidates.length ? "Or pick another active deal" : "Pick the deal this belongs to"}</option>
+                  <option value="" disabled>{candidates.length ? "Or pick another deal" : "Pick the deal this belongs to"}</option>
                   {others.map((d) => <option key={d.id} value={d.id}>{addr(d)} · {who(d.agent_member_id)}</option>)}
                 </select>
                 <Button variant={candidates.length ? "quiet" : "primary"} className="shrink-0">Attach</Button>

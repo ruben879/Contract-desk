@@ -20,7 +20,7 @@ export async function attachToDeal(itemId: string, fd: FormData) {
   const { supabase, user, item } = await openItem(itemId);
   const txId = String(fd.get("transaction_id") ?? "");
   const { data: tx } = await supabase.from("transactions").select("id, status").eq("id", txId).maybeSingle();
-  if (!tx || tx.status !== "active") throw new Error("Pick an active deal.");
+  if (!tx || !["active", "needs_review", "reading", "failed"].includes(tx.status)) throw new Error("Pick an open deal.");
   await attachIntakeToDeal(item.id, tx.id, user.id, (task) => after(task));
   revalidatePath("/sort");
   redirect(`/t/${tx.id}`);

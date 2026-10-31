@@ -66,6 +66,7 @@ export function ReviewForm(props: {
   agentHint: string | null;
   rules: DeadlineRule[];
   currentDeadlines: { key: string; label: string; due_date: string; due_time: string | null }[] | null;
+  extras?: React.ReactNode;
 }) {
   const { id, confirmed, values, meta } = props;
   const [state, action, pending] = useActionState<ConfirmState, FormData>(confirmTransaction.bind(null, id), undefined);
@@ -94,6 +95,8 @@ export function ReviewForm(props: {
           ? "Saving recalculates every dependent date and adds or removes checklist tasks. Finished tasks stay finished."
           : `Read from ${props.docCount} document${props.docCount === 1 ? "" : "s"}${props.hasScan ? " (includes a scan)" : ""}. ${flagged ? `${flagged} field${flagged === 1 ? "" : "s"} need a look.` : "Everything read cleanly. Give it a once-over."} Tap a page link to see where each value came from. Nothing is saved until you confirm.`}
       </p>
+
+      {props.extras}
 
       {props.warnings.length > 0 && (
         <Card className="mt-4 border-warn bg-warn-soft">

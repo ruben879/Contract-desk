@@ -55,3 +55,9 @@ export function todayIn(tz: string): ISODate {
 export function daysBetween(a: ISODate, b: ISODate): number {
   return Math.round((parseISO(b).getTime() - parseISO(a).getTime()) / 86_400_000);
 }
+
+/** "Fri, Oct 30": for dates on a live deal, where the year is noise. */
+export function formatDay(d: ISODate | null | undefined): string {
+  if (!d) return "";
+  return parseISO(d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+}

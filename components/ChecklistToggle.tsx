@@ -44,3 +44,19 @@ export function MarkDoneButton({ id }: { id: string }) {
     </button>
   );
 }
+
+/** Tucked-away "not needed" so it doesn't crowd every row. */
+export function TaskMenu({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  return (
+    <details className="relative shrink-0">
+      <summary aria-label="More options" className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-lg leading-none text-muted hover:bg-paper">⋯</summary>
+      <div className="absolute right-0 top-9 z-20 w-40 rounded-xl border border-line bg-white p-1 shadow-lg">
+        <button disabled={pending} onClick={() => start(() => setChecklistStatus(id, "not_needed"))}
+          className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-paper disabled:opacity-50">
+          {pending ? "Saving..." : "Not needed for this deal"}
+        </button>
+      </div>
+    </details>
+  );
+}

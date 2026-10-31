@@ -12,8 +12,13 @@ export async function loadPdfs(db: Db, docs: { id: string; file_name: string; st
   const pdfs: PdfInput[] = [];
   let total = 0;
   for (const doc of docs) {
-    const { data: blob, error } = await db.storage.from("documents").download(doc.storage_path);
-    if (error || !blob) throw new Error(`Could not open ${doc.file_name}.`);
+    // A document row is created just before its upload finishes, so give a fresh upload a moment.
+    let { data: blob, error } = await db.storage.from("documents").download(doc.storage_path);
+    for (let i = 0; (error || !blob) && i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      ({ data: blob, error } = await db.storage.from("documents").download(doc.storage_path));
+    }
+    if (error || !blob) throw new Error(`Could not open ${doc.file_name}. If it was still uploading, try again.`);
     const bytes = new Uint8Array(await blob.arrayBuffer());
     total += bytes.byteLength;
     if (total > MAX_TOTAL_BYTES) throw new Error("These PDFs are larger than 30 MB combined. Split the packet and try again.");
@@ -40,10 +45,15 @@ export async function labelDocuments(db: Db, ids: string[], kinds: { doc: number
  * First read of a new deal. Saves a DRAFT only. The agent's confirm step is the only path
  * from draft to real data.
  */
-export async function runExtraction(transactionId: string) {
+export async function runExtraction(transactionId: string, depth = 0): Promise<void> {
   const db = supabaseAdmin();
   const { data: tx } = await db.from("transactions").select("id, brokerage_id, status").eq("id", transactionId).single();
   if (!tx || !["reading", "failed"].includes(tx.status)) return;
+
+  // Only one read of the whole file at a time. A document added mid-read is picked up when it ends.
+  const { data: running } = await db.from("extractions").select("id").eq("transaction_id", tx.id).eq("kind", "initial")
+    .eq("status", "running").gt("started_at", new Date(Date.now() - 10 * 60_000).toISOString()).limit(1);
+  if (running?.length) return;
   await db.from("transactions").update({ status: "reading", updated_at: new Date().toISOString() }).eq("id", tx.id);
 
   const { data: docs } = await db.from("documents").select("id, file_name, storage_path, size_bytes").eq("transaction_id", tx.id).order("created_at");
@@ -56,6 +66,9 @@ export async function runExtraction(transactionId: string) {
     if (!docs?.length) throw new Error("No documents were found on this transaction.");
     const { extraction, model } = await readContract(await loadPdfs(db, docs));
     await labelDocuments(db, ids, extraction.documents);
+    // An earlier draft read of fewer documents is replaced by this one.
+    await db.from("extractions").update({ status: "dismissed", error: "Replaced by a read that includes added documents" })
+      .eq("transaction_id", tx.id).eq("kind", "initial").eq("status", "ready");
     await db.from("extractions").update({ status: "ready", result: extraction, model, finished_at: new Date().toISOString() }).eq("id", ex!.id);
     await db.from("transactions").update({ status: "needs_review", updated_at: new Date().toISOString() }).eq("id", tx.id);
   } catch (e) {
@@ -63,6 +76,38 @@ export async function runExtraction(transactionId: string) {
     await db.from("extractions").update({ status: "failed", error: message, finished_at: new Date().toISOString() }).eq("id", ex!.id);
     await db.from("transactions").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", tx.id);
   }
+
+  // Documents added while this read ran: read the whole file again so the draft includes them.
+  const { data: now } = await db.from("documents").select("id").eq("transaction_id", tx.id);
+  const added = (now ?? []).some((d) => !ids.includes(d.id));
+  if (added && depth < 3) {
+    await db.from("transactions").update({ status: "reading" }).eq("id", tx.id).in("status", ["needs_review", "failed"]);
+    return runExtraction(tx.id, depth + 1);
+  }
+}
+
+/**
+ * Documents were added to a deal, by upload, email routing, sorting, or a merge. One rule for
+ * every state, so a file never has to arrive in one batch:
+ *   reading       -> the read in progress picks them up when it ends
+ *   needs_review  -> read the whole file again; still a draft until the agent confirms
+ *   failed        -> same, which also retries the read
+ *   active        -> amendment re-read with a diff to confirm
+ */
+export async function readAddedDocuments(
+  transactionId: string,
+  documentIds: string[],
+  opts: { source?: "upload" | "email"; intakeItemId?: string | null } = {},
+) {
+  const db = supabaseAdmin();
+  const { data: tx } = await db.from("transactions").select("id, status").eq("id", transactionId).single();
+  if (!tx || !documentIds.length) return;
+  if (tx.status === "active") return runAmendmentRead(tx.id, documentIds, { ...opts, waitForRunning: true });
+  if (tx.status === "needs_review" || tx.status === "failed") {
+    await db.from("transactions").update({ status: "reading", updated_at: new Date().toISOString() }).eq("id", tx.id);
+    return runExtraction(tx.id);
+  }
+  if (tx.status === "reading") return runExtraction(tx.id); // no-op if a read is running; it re-reads at the end
 }
 
 /**

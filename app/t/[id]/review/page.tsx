@@ -6,6 +6,8 @@ import { ExtractionSchema, type Extraction } from "@/lib/extract/schema";
 import { orderedDocs } from "@/lib/docs";
 import { ReviewForm, type ContactDraft, type FieldMeta } from "./ReviewForm";
 import type { DeadlineRule } from "@/lib/deadlines/compute";
+import { sameProperty } from "@/lib/address";
+import { AddMoreDocuments, DuplicateNotice } from "./ReviewExtras";
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -103,6 +105,27 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     ? (links ?? []).map((l: any) => ({ role: l.role, full_name: l.contacts.full_name, company: l.contacts.company ?? "", email: l.contacts.email ?? "", phone: l.contacts.phone ?? "" }))
     : ex ? contactsFromExtraction(ex, licenses) : [];
 
+  // Duplicate catch: another open deal at the address this draft's documents show.
+  let duplicates: { id: string; label: string }[] = [];
+  if (!confirmed && ex?.property_street.value) {
+    const here = { street: ex.property_street.value, city: ex.property_city.value, zip: ex.property_zip.value };
+    const { data: open } = await supabase.from("transactions").select("id, status, property_street, property_city, property_zip")
+      .in("status", ["active", "needs_review", "failed"]).neq("id", id);
+    const draftIds = (open ?? []).filter((d) => d.status !== "active").map((d) => d.id);
+    const { data: draftReads } = draftIds.length
+      ? await supabase.from("extractions").select("transaction_id, result").in("transaction_id", draftIds).eq("kind", "initial").eq("status", "ready")
+      : { data: [] };
+    const readAddr = new Map((draftReads ?? []).map((r: any) => [r.transaction_id, r.result]));
+    duplicates = (open ?? []).flatMap((d) => {
+      const r = readAddr.get(d.id);
+      const there = d.status === "active"
+        ? { street: d.property_street, city: d.property_city, zip: d.property_zip }
+        : { street: r?.property_street?.value, city: r?.property_city?.value, zip: r?.property_zip?.value };
+      if (!sameProperty(here, there)) return [];
+      return [{ id: d.id, label: d.status === "active" ? `the active deal at ${there.street}` : `the unconfirmed draft for ${there.street}` }];
+    });
+  }
+
   return (
     <AppShell brokerage={brokerage.name} logoUrl={brokerage.logo_url} showSettings={isBrokerOrStaff} wide>
       <SourceLayout docs={docs.map((d) => ({ name: d.file_name, url: d.url, scanned: !!d.is_scanned }))}>
@@ -121,6 +144,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           agentHint={agentHint}
           rules={(rules ?? []) as DeadlineRule[]}
           currentDeadlines={confirmed ? deadlines ?? [] : null}
+          extras={<>
+            <DuplicateNotice draftId={id} matches={duplicates} />
+            <AddMoreDocuments transactionId={id} confirmed={confirmed} />
+          </>}
         />
       </SourceLayout>
     </AppShell>

@@ -63,7 +63,7 @@ export default async function Home() {
             {toReview.map((r) => (
               <li key={r.id}>
                 <Link href={amended.has(r.id) ? `/t/${r.id}/changes` : `/t/${r.id}`} className="flex items-center justify-between rounded-xl bg-white px-3 py-3 hover:shadow-sm">
-                  <span className="truncate font-medium">{title(r)}</span>
+                  <span className="min-w-0 font-medium leading-snug">{title(r)}</span>
                   <span className="flex shrink-0 items-center gap-2">
                     {!r.agent_member_id && <Badge tone="warn">Unassigned</Badge>}
                     {r.status === "failed" ? <Badge tone="bad">Couldn't read</Badge> : amended.has(r.id) ? <Badge tone="warn">Changes</Badge> : <Badge tone="brand">Review</Badge>}
@@ -74,7 +74,7 @@ export default async function Home() {
           </ul>
         </Card>
       ) : (
-        <Dropzone start={startUpload} label="Drop an executed contract here" hint="Or tap to choose PDFs or take photos. Add the contract and its addenda together." />
+        <Dropzone start={startUpload} label="Start a deal: drop the contract here" hint="Or tap to choose PDFs or take photos. Start with whatever you have; add the rest of the file anytime." />
       )}
 
       {toReview.length > 0 && (
@@ -89,7 +89,7 @@ export default async function Home() {
           <Card className="space-y-2">
             {reading.map((r) => (
               <Link key={r.id} href={`/t/${r.id}`} className="flex justify-between text-sm">
-                <span className="truncate">{title(r)}</span><span className="text-muted">Reading...</span>
+                <span className="min-w-0 leading-snug">{title(r)}</span><span className="text-muted">Reading...</span>
               </Link>
             ))}
           </Card>
@@ -107,7 +107,7 @@ export default async function Home() {
               <Link key={r.id} href={`/t/${r.id}`}>
                 <Card className="flex items-center justify-between gap-3 py-3 hover:shadow-sm">
                   <div className="min-w-0">
-                    <div className="truncate font-medium">{title(r)}</div>
+                    <div className="font-medium leading-snug">{title(r)}</div>
                     {r.next && <div className="text-sm text-muted">{r.next.label}: {formatShort(r.next.due_date)}</div>}
                   </div>
                   {days != null && <Badge tone={days <= 2 ? "warn" : "neutral"}>{days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days} days`}</Badge>}
