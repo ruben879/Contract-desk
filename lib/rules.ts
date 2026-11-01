@@ -18,6 +18,7 @@ export type DealContext = {
   addenda: AddendumKey[];
   financing_type: FinancingType | null;
   seller_disclosure: DisclosureStatus | null;
+  missing_docs?: AddendumKey[] | null;  // referenced by the contract but not in the file (lib/missing-docs.ts)
   contract_type?: ContractType | null; // Phase 2
 };
 
@@ -35,3 +36,5 @@ export function applies(rule: Conditions, ctx: DealContext): boolean {
 }
 
 export const hasAddendum = (k: AddendumKey) => (c: DealContext) => c.addenda.includes(k);
+/** The contract refers to this document but it isn't in the file yet. */
+export const isMissing = (k: AddendumKey) => (c: DealContext) => (c.missing_docs ?? []).includes(k) && !c.addenda.includes(k);

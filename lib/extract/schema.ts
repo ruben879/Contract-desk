@@ -40,7 +40,7 @@ export const FIELD_TYPES = {
   financing_type: z.enum(FINANCING_TYPES),
   effective_date: isoDate, closing_date: isoDate,
   earnest_money: num, option_fee: num,
-  option_period_days: int, survey_days: int,
+  option_period_days: int, survey_days: int, hoa_info_days: int,
   seller_disclosure: z.enum(DISCLOSURE_STATUSES),
   title_company: str, escrow_officer: str,
   listing_broker_firm: str, listing_broker_license: str,

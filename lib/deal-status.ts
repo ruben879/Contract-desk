@@ -27,14 +27,16 @@ export function dealStatus(input: {
   return { label: "Under contract", tone: "brand", detail: null };
 }
 
-export type TaskGroup = "late" | "today" | "week" | "later" | "anytime" | "done";
+export type TaskGroup = "late" | "attention" | "today" | "week" | "later" | "anytime" | "done";
 export const GROUP_LABEL: Record<TaskGroup, string> = {
-  late: "Past due", today: "Due today", week: "This week", later: "Coming up", anytime: "Anytime", done: "Done",
+  late: "Past due", attention: "Needs attention", today: "Due today", week: "This week", later: "Coming up", anytime: "Anytime", done: "Done",
 };
 
-export function taskTiming(status: string, due: ISODate | null | undefined, today: ISODate): { group: TaskGroup; chip: Chip | null } {
+/** unresolved: the task's date depends on a term the contract leaves blank. */
+export function taskTiming(status: string, due: ISODate | null | undefined, today: ISODate, unresolved = false): { group: TaskGroup; chip: Chip | null } {
   if (status === "done") return { group: "done", chip: { label: "Done", tone: "good" } };
   if (status === "not_needed") return { group: "done", chip: { label: "Not needed", tone: "neutral" } };
+  if (!due && unresolved) return { group: "attention", chip: { label: "No date in contract", tone: "warn" } };
   if (!due) return { group: "anytime", chip: null };
   const n = daysBetween(today, due);
   if (n < 0) return { group: "late", chip: { label: `${-n} day${n === -1 ? "" : "s"} late`, tone: "bad" } };

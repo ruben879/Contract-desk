@@ -1,4 +1,6 @@
-import { applies, hasAddendum as has, type Conditions, type DealContext } from "@/lib/rules";
+import { applies, hasAddendum as has, isMissing as missing, type Conditions, type DealContext } from "@/lib/rules";
+
+const hasOrMissing = (k: Parameters<typeof has>[0]) => (c: DealContext) => has(k)(c) || missing(k)(c);
 
 // Labeled document slots on every deal. Same conditions as checklist tasks, so a slot appears
 // only when the file needs it (an HOA slot only with the HOA addendum, and so on).
@@ -8,9 +10,9 @@ export type SlotRule = Conditions & { key: string; label: string; many?: boolean
 
 export const SLOT_RULES: SlotRule[] = [
   { key: "contract", label: "Executed contract" },
-  { key: "third_party_financing", label: "Third Party Financing Addendum", when: has("third_party_financing") },
-  { key: "hoa_addendum", label: "HOA addendum", when: has("hoa") },
-  { key: "lead_based_paint", label: "Lead-based paint addendum", when: has("lead_based_paint") },
+  { key: "third_party_financing", label: "Third Party Financing Addendum", when: hasOrMissing("third_party_financing") },
+  { key: "hoa_addendum", label: "HOA addendum", when: hasOrMissing("hoa") },
+  { key: "lead_based_paint", label: "Lead-based paint addendum", when: hasOrMissing("lead_based_paint") },
   { key: "other_addenda", label: "Other addenda", many: true },
   { key: "sellers_disclosure", label: "Seller's Disclosure", when: (c) => c.seller_disclosure !== "not_required" },
   { key: "amendments", label: "Amendments", many: true },

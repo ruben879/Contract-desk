@@ -10,6 +10,9 @@ import { termsFromTx } from "@/lib/terms";
 import { daysBetween, formatDate, formatDay, formatShort, formatTime } from "@/lib/dates";
 import { FINANCING_LABELS, type FinancingType } from "@/lib/addenda";
 import { displayError } from "@/lib/extract/errors";
+import { computeDeadlines, type DeadlineRule } from "@/lib/deadlines/compute";
+import { CommentsSection } from "@/components/Comments";
+import { MarkMentionsRead } from "@/components/CommentComposer";
 
 const CONTACT_LABELS: Record<string, string> = {
   buyer: "Buyer", seller: "Seller", listing_agent: "Listing agent", buyer_agent: "Buyer's agent",
@@ -22,10 +25,15 @@ export type DealViewProps = {
   deadlines: any[]; items: any[]; links: any[]; events: any[];
   lastReread: { id: string; status: string; error: string | null; document_ids: string[] } | null;
   docs: { id: string; file_name: string; url?: string; slot: string | null; slot_source: string | null; page_count: number | null; is_scanned: boolean | null }[];
+  rules: DeadlineRule[];
+  me: string;
+  comments: { id: string; body: string; created_at: string; author_member_id: string }[];
+  team: { id: string; full_name: string | null; email: string; role: string; active: boolean }[];
+  unreadMentions: string[];   // comment ids on this deal that mention me and I haven't seen
 };
 
 /** The confirmed deal: header, next action, tasks by when they're due, dates, documents, people, history. */
-export function DealView({ id, tx, today, timezone, deadlines, items, links, events, lastReread, docs }: DealViewProps) {
+export function DealView({ id, tx, today, timezone, deadlines, items, links, events, lastReread, docs, rules, me, comments, team, unreadMentions }: DealViewProps) {
   const brokerage = { timezone };
   const amendment = lastReread?.status === "ready" ? lastReread : null;
   const rereading = lastReread?.status === "running" || lastReread?.status === "pending";
@@ -33,6 +41,15 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const docName = (ids: string[]) => docs.filter((d) => ids.includes(d.id)).map((d) => d.file_name).join(", ");
 
   const dueOf = new Map((deadlines ?? []).map((d) => [d.key, d]));
+  // Terms the contract leaves blank: no date, flagged instead. (Dates already saved stay as saved until the next confirm.)
+  const terms = termsFromTx(tx);
+  const attention = computeDeadlines(rules, terms).skipped.filter((s) => s.kind === "unresolved" && !dueOf.has(s.key));
+  const attentionOf = new Map(attention.map((a) => [a.key, a]));
+
+  const nameOf = (mid: string) => { const m = team.find((t) => t.id === mid); return m ? m.full_name || m.email : null; };
+  const mentionable = team.filter((m) => m.active && (m.role !== "agent" || m.id === tx.agent_member_id))
+    .map((m) => ({ id: m.id, name: m.full_name || m.email, role: m.role }));
+  const unread = new Set(unreadMentions);
   const open = (items ?? []).filter((i) => i.status === "open")
     .sort((a, b) => (dueOf.get(a.deadline_key)?.due_date ?? "9999").localeCompare(dueOf.get(b.deadline_key)?.due_date ?? "9999") || a.sort - b.sort);
   const next = open[0];
@@ -44,17 +61,17 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const status = dealStatus({ status: tx.status, today, deadlines: deadlines ?? [] });
 
   // Tasks grouped by when they're due, so what needs doing comes first.
-  const ORDER: TaskGroup[] = ["late", "today", "week", "later", "anytime", "done"];
+  const ORDER: TaskGroup[] = ["late", "attention", "today", "week", "later", "anytime", "done"];
   const grouped = new Map<TaskGroup, { it: (typeof all)[number]; chip: ReturnType<typeof taskTiming>["chip"]; due: string | null }[]>();
   for (const it of all) {
     const due = dueOf.get(it.deadline_key)?.due_date ?? null;
-    const t = taskTiming(it.status, due, today);
+    const t = taskTiming(it.status, due, today, attentionOf.has(it.deadline_key));
     grouped.set(t.group, [...(grouped.get(t.group) ?? []), { it, chip: t.chip, due }]);
   }
   for (const list of grouped.values()) list.sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.it.sort - b.it.sort);
   const lateCount = grouped.get("late")?.length ?? 0;
 
-  const slotList = slotsFor(termsFromTx(tx), new Set(docs.map((d) => d.slot).filter((x): x is string => !!x)));
+  const slotList = slotsFor(terms, new Set(docs.map((d) => d.slot).filter((x): x is string => !!x)));
   const filledSlots = slotList.filter((sl) => docs.some((d) => d.slot === sl.key)).length;
 
   const Section = ({ id: anchor, title, children }: { id: string; title: string; children: React.ReactNode }) => (
@@ -97,13 +114,14 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
       <nav className="sticky top-0 z-10 -mx-4 mt-3 flex gap-1 overflow-x-auto bg-paper/95 px-4 py-2 text-sm backdrop-blur">
         {[
           { href: "#tasks", label: "Tasks", count: `${doneCount}/${all.length}`, alert: lateCount > 0 },
-          { href: "#dates", label: "Dates", count: String((deadlines ?? []).length), alert: false },
+          { href: "#dates", label: "Dates", count: String((deadlines ?? []).length), alert: attention.length > 0 },
           { href: "#docs", label: "Docs", count: `${filledSlots}/${slotList.length}`, alert: false },
           { href: "#people", label: "People", count: String((links ?? []).length), alert: false },
+          { href: "#comments", label: "Comments", count: String(comments.length), alert: unread.size > 0 },
         ].map((t) => (
           <a key={t.href} href={t.href} className="relative flex shrink-0 items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 font-medium">
             {t.label} <span className="text-muted">{t.count}</span>
-            {t.alert && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-bad" aria-label="past due" />}
+            {t.alert && <span className={cx("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full", t.href === "#tasks" ? "bg-bad" : t.href === "#comments" ? "bg-brand" : "bg-warn")} aria-label={t.href === "#tasks" ? "past due" : t.href === "#comments" ? "unread mention" : "needs attention"} />}
           </a>
         ))}
       </nav>
@@ -149,7 +167,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
         <div className="space-y-3">
           {ORDER.filter((g) => g !== "done" && grouped.get(g)?.length).map((g) => (
             <Card key={g} className="p-0 sm:p-0">
-              <div className={cx("flex items-center justify-between border-b border-line px-4 py-2 text-sm font-semibold", g === "late" && "text-bad")}>
+              <div className={cx("flex items-center justify-between border-b border-line px-4 py-2 text-sm font-semibold", g === "late" && "text-bad", g === "attention" && "text-warn")}>
                 {GROUP_LABEL[g]} <span className="font-normal text-muted">{grouped.get(g)!.length}</span>
               </div>
               <ul className="divide-y divide-line">
@@ -161,6 +179,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                         {chip && <span className={cx("rounded-full px-2 py-0.5 font-semibold", chipTone[chip.tone])}>{chip.label}</span>}
                         {due && <span>{formatDay(due)}</span>}
+                        {!due && attentionOf.get(it.deadline_key) && <span>{attentionOf.get(it.deadline_key)!.reason}</span>}
                         {it.reason && <span>{it.reason}</span>}
                       </div>
                     </div>
@@ -191,7 +210,16 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
 
       <Section id="dates" title="Key dates">
         <Card className="divide-y divide-line p-0 sm:p-0">
-          {(deadlines ?? []).length === 0 && <p className="p-4 text-sm text-muted">No dates yet. Add the effective date in Edit details.</p>}
+          {attention.map((a) => (
+            <div key={a.key} className="flex items-start justify-between gap-3 bg-warn-soft/50 px-4 py-3">
+              <div className="min-w-0">
+                <div className="font-medium leading-snug">{a.label}</div>
+                <div className="text-xs text-muted">{a.reason} Fill it in under <Link href={`/t/${id}/review`} className="text-brand">Edit details</Link> if the contract or an amendment sets it.</div>
+              </div>
+              <span className="shrink-0"><Badge tone="warn">Needs attention</Badge></span>
+            </div>
+          ))}
+          {(deadlines ?? []).length === 0 && attention.length === 0 && <p className="p-4 text-sm text-muted">No dates yet. Add the effective date in Edit details.</p>}
           {(deadlines ?? []).map((d) => {
             const n = daysBetween(today, d.due_date);
             const c = n < 0 ? { label: "Passed", tone: "neutral" as const } : n === 0 ? { label: "Today", tone: "warn" as const } : { label: `In ${n} day${n === 1 ? "" : "s"}`, tone: n <= 2 ? ("warn" as const) : ("neutral" as const) };
@@ -238,6 +266,12 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
         ))}
       </Card>
 
+      </Section>
+
+      <Section id="comments" title="Comments">
+        <MarkMentionsRead transactionId={id} count={unread.size} />
+        <CommentsSection transactionId={id} meId={me} timezone={timezone} nameOf={nameOf} members={mentionable}
+          comments={comments.map((c) => ({ ...c, unreadForMe: unread.has(c.id) }))} />
       </Section>
 
       {(events ?? []).length > 0 && (

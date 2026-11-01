@@ -33,6 +33,13 @@ Next.js 15 (App Router) on Vercel, Supabase (Postgres, Auth, Storage), Claude fo
 - **TC queue** (`/queue`, broker and staff): open tasks due today and past due across all active files, filterable by agent.
 - **Contract types later:** tasks and slots share one filter (`lib/rules.ts`). Rules can already name `contractTypes`; Phase 1 never sets a deal's type, so those rules stay off until Phase 2.
 
+## Missing documents, unresolved terms, comments (Oct 31)
+
+- **Referenced but not in the file** (`lib/missing-docs.ts`): an addendum checked in Para 22 but not attached, or a Seller's Disclosure marked received with no copy, is pre-ticked on the review screen. Each one the agent keeps becomes a "Get the ... in the file" task naming its slot. When the document is attached (amendment read or edit), the task is marked done.
+- **Addendum deadlines:** the HOA addendum's day count (`hoa_info_days`) produces "HOA subdivision information due", which dates the HOA request and delivery tasks. It exists only when the HOA addendum is in the file.
+- **Blank stays blank:** a deadline whose day count comes from the contract (option period, survey, HOA) never falls back to a default. If the contract leaves it blank, the deal shows it under **Needs attention** (Key dates and Tasks) instead of a date.
+- **Comments** on every deal: plain text, newest first, author and time. Type @ to mention someone who can open the deal. Mentions show in the **Queue** (now open to every member) and flag the deal on the home screen until you open it. Comments are conversation only: they never go into History, and nothing posts one automatically.
+
 ## Where to change things
 
 - **Deadline day counts:** Settings > Deadline day counts (table `deadline_rules`). Every placeholder shows a "Day count not verified yet" badge on deals until you tick Verified.
@@ -50,7 +57,7 @@ Email intake moves from Postmark to Cloudflare after the first live test: see `d
 Step-by-step deploy and the first live test: see **DEPLOY.md**.
 
 
-1. **Supabase:** create a project. In SQL Editor, run `supabase/migrations/0001_phase1_schema.sql`, then `0002_v3_phase1.sql`, then `0003_routing_slots.sql`. Under Auth > URL Configuration, add `https://YOUR-APP.vercel.app/auth/callback` as a redirect URL.
+1. **Supabase:** create a project. In SQL Editor, run `supabase/migrations/0001_phase1_schema.sql`, then `0002_v3_phase1.sql`, then `0003_routing_slots.sql`, `0004_fix_deal_insert_rls.sql`, `0005_checklist_gaps.sql`, `0006_comments_mentions.sql`. Under Auth > URL Configuration, add `https://YOUR-APP.vercel.app/auth/callback` as a redirect URL.
 2. **Env vars:** copy `.env.example` to `.env.local` locally and add the same values in Vercel.
 3. **Inbound email (Postmark):** create an Inbound stream. Point an MX record for a subdomain (e.g. `inbound.yourdomain.com`) at Postmark, or use Postmark's own inbound address with `+` hashes. Set the webhook URL to `https://postmark:SECRET@YOUR-APP.vercel.app/api/inbound/email`, where SECRET matches `INBOUND_WEBHOOK_SECRET`. Attachments are included in the webhook by default.
 4. `npm install && npm run dev`, sign in, create the brokerage. Your forward-to address shows on the home screen.

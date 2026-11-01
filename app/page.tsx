@@ -39,6 +39,11 @@ export default async function Home() {
   const amended = new Set((pending ?? []).map((p) => p.transaction_id));
   const toReview = rows.filter((r) => r.status === "needs_review" || r.status === "failed" || amended.has(r.id));
   const missing = missingProfile(member, brokerage, isBrokerOrStaff);
+  // Deals where someone mentioned you in a comment you haven't seen yet.
+  const { data: myUnread } = await supabase.from("comment_mentions").select("transaction_id").eq("member_id", member.id).is("read_at", null);
+  const mentioned = new Set((myUnread ?? []).map((m) => m.transaction_id));
+  const MentionFlag = ({ id }: { id: string }) => mentioned.has(id)
+    ? <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-white" title="Someone mentioned you in a comment">@ Mentioned you</span> : null;
   // Emailed documents that couldn't be placed with certainty (RLS: staff see all, agents see their own).
   const { count: toSort } = await supabase.from("intake_items").select("id", { count: "exact", head: true }).eq("status", "needs_sorting");
   const reading = rows.filter((r) => r.status === "reading");
@@ -65,6 +70,7 @@ export default async function Home() {
                 <Link href={amended.has(r.id) ? `/t/${r.id}/changes` : `/t/${r.id}`} className="flex items-center justify-between rounded-xl bg-white px-3 py-3 hover:shadow-sm">
                   <span className="min-w-0 font-medium leading-snug">{title(r)}</span>
                   <span className="flex shrink-0 items-center gap-2">
+                    <MentionFlag id={r.id} />
                     {!r.agent_member_id && <Badge tone="warn">Unassigned</Badge>}
                     {r.status === "failed" ? <Badge tone="bad">Couldn't read</Badge> : amended.has(r.id) ? <Badge tone="warn">Changes</Badge> : <Badge tone="brand">Review</Badge>}
                   </span>
@@ -110,7 +116,10 @@ export default async function Home() {
                     <div className="font-medium leading-snug">{title(r)}</div>
                     {r.next && <div className="text-sm text-muted">{r.next.label}: {formatShort(r.next.due_date)}</div>}
                   </div>
-                  {days != null && <Badge tone={days <= 2 ? "warn" : "neutral"}>{days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days} days`}</Badge>}
+                  <span className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
+                    <MentionFlag id={r.id} />
+                    {days != null && <Badge tone={days <= 2 ? "warn" : "neutral"}>{days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days} days`}</Badge>}
+                  </span>
                 </Card>
               </Link>
             );

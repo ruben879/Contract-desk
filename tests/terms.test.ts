@@ -5,7 +5,7 @@ const current: Terms = {
   side: "buyer", contract_form: "TREC 20-18", property_street: "123 Main St", property_city: "Lubbock", property_state: "TX",
   property_zip: "79424", property_county: "Lubbock", legal_description: null, sales_price: 325000, financed_amount: 308750,
   financing_type: "conventional", effective_date: "2026-10-28", closing_date: "2026-12-04", earnest_money: 3000, option_fee: 200,
-  option_period_days: 7, survey_days: null, seller_disclosure: "received", addenda: ["third_party_financing"],
+  option_period_days: 7, survey_days: null, hoa_info_days: null, seller_disclosure: "received", addenda: ["third_party_financing"], missing_docs: null,
 };
 const loc = { doc: 1, page: 1, quote: "x", box: null, source: "Para 2" };
 

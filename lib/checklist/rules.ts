@@ -1,4 +1,7 @@
-import { applies, hasAddendum as has, type Conditions, type DealContext, type Side } from "@/lib/rules";
+import { applies, hasAddendum as has, isMissing, type Conditions, type DealContext, type Side } from "@/lib/rules";
+import { ADDENDA, type AddendumKey } from "@/lib/addenda";
+import { MISSING_DOC_KEYS, missingReason, slotForMissing } from "@/lib/missing-docs";
+import { SLOT_LABEL } from "@/lib/slots";
 
 // Every checklist task lives here. Standard tasks apply to every deal on the listed sides;
 // triggered tasks appear only when their condition matches what's in the file.
@@ -17,6 +20,11 @@ export type ChecklistRule = Conditions & {
 };
 
 const buyerSide: Side[] = ["buyer", "both"];
+
+const MISSING_SECTION: Partial<Record<AddendumKey, ChecklistRule["section"]>> = {
+  sellers_disclosure: "Disclosures", lead_based_paint: "Disclosures", hoa: "HOA",
+  third_party_financing: "Financing", seller_financing: "Financing", loan_assumption: "Financing",
+};
 
 export const CHECKLIST_RULES: ChecklistRule[] = [
   // ---- Standard ----
@@ -56,9 +64,9 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
     reason: "Loan assumption is part of this deal" },
 
   // ---- Triggered: HOA ----
-  { key: "hoa_request_docs", title: "Request HOA subdivision information and resale certificate", section: "HOA",
+  { key: "hoa_request_docs", title: "Request HOA subdivision information and resale certificate", section: "HOA", deadline_key: "hoa_info",
     when: has("hoa"), reason: "HOA addendum is in the file" },
-  { key: "hoa_deliver_docs", title: "HOA documents delivered to buyer", section: "HOA",
+  { key: "hoa_deliver_docs", title: "HOA documents delivered to buyer", section: "HOA", deadline_key: "hoa_info",
     when: has("hoa"), reason: "HOA addendum is in the file" },
   { key: "hoa_review_window", title: "Track buyer's HOA document review window", section: "HOA", sides: buyerSide,
     when: has("hoa"), reason: "HOA addendum is in the file" },
@@ -79,6 +87,15 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
     reason: "A temporary residential lease is in the file" },
   { key: "backup_status", title: "Track status of the primary contract", section: "Other",
     when: has("back_up_contract"), reason: "This is a back-up contract" },
+
+  // ---- Triggered: documents the contract refers to that aren't in the file ----
+  ...MISSING_DOC_KEYS.map((k): ChecklistRule => ({
+    key: `missing_${k}`,
+    title: `Get the ${ADDENDA[k]} in the file`,
+    section: MISSING_SECTION[k] ?? "Contract",
+    when: isMissing(k),
+    reason: `${missingReason(k)}. File it under ${SLOT_LABEL[slotForMissing(k)]}.`,
+  })),
 ];
 
 export function buildChecklist(ctx: ChecklistContext) {

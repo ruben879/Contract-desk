@@ -5,7 +5,9 @@ import { Badge, Card, SectionTitle, cx, inputCls } from "@/components/ui";
 import { ShowSource, type SourceTarget } from "@/components/SourceViewer";
 import { DatePreview } from "@/components/DatePreview";
 import type { DeadlineRule } from "@/lib/deadlines/compute";
-import { ADDENDA, ADDENDUM_KEYS, DISCLOSURE_LABELS, DISCLOSURE_STATUSES, FINANCING_LABELS, FINANCING_TYPES } from "@/lib/addenda";
+import { ADDENDA, ADDENDUM_KEYS, DISCLOSURE_LABELS, DISCLOSURE_STATUSES, FINANCING_LABELS, FINANCING_TYPES, type AddendumKey } from "@/lib/addenda";
+import { missingReason, slotForMissing } from "@/lib/missing-docs";
+import { SLOT_LABEL } from "@/lib/slots";
 
 export type FieldMeta = {
   confidence: "high" | "medium" | "low"; found: boolean; value: unknown;
@@ -60,7 +62,9 @@ const num = (s: FormDataEntryValue | null) => {
 
 export function ReviewForm(props: {
   id: string; confirmed: boolean; values: Record<string, unknown>; meta: Record<string, FieldMeta>;
-  extractedAddenda: Addendum[]; selectedAddenda: string[]; contacts: ContactDraft[]; warnings: string[];
+  extractedAddenda: Addendum[]; selectedAddenda: string[];
+  missingOptions: string[]; missingSelected: string[];
+  contacts: ContactDraft[]; warnings: string[];
   docCount: number; hasScan: boolean;
   team: { id: string; full_name: string | null; email: string; role: string }[] | null;
   agentHint: string | null;
@@ -75,6 +79,7 @@ export function ReviewForm(props: {
   const [dates, setDates] = useState({
     effective_date: v("effective_date") || null, closing_date: v("closing_date") || null,
     option_period_days: num(v("option_period_days")), survey_days: num(v("survey_days")),
+    hoa_info_days: num(v("hoa_info_days")), addenda: props.selectedAddenda,
   });
   const flagged = Object.values(meta).filter(needsLook).length;
   const found = new Map(props.extractedAddenda.map((a) => [a.key, a]));
@@ -87,6 +92,7 @@ export function ReviewForm(props: {
       setDates({
         effective_date: String(fd.get("effective_date") || "") || null, closing_date: String(fd.get("closing_date") || "") || null,
         option_period_days: num(fd.get("option_period_days")), survey_days: num(fd.get("survey_days")),
+        hoa_info_days: num(fd.get("hoa_info_days")), addenda: fd.getAll("addenda").map(String),
       });
     }}>
       <h1 className="text-xl font-bold">{confirmed ? "Edit deal details" : "Check what we read"}</h1>
@@ -167,7 +173,11 @@ export function ReviewForm(props: {
           <FieldInput {...F({ name: "closing_date", label: "Closing date", type: "date" })} />
           <FieldInput {...F({ name: "option_period_days", label: "Option period (days)", inputMode: "numeric" })} />
           <FieldInput {...F({ name: "survey_days", label: "Survey (days)", inputMode: "numeric" })} />
+          {(dates.addenda.includes("hoa") || values.hoa_info_days != null) && (
+            <FieldInput {...F({ name: "hoa_info_days", label: "HOA information (days)", inputMode: "numeric" })} />
+          )}
         </div>
+        <p className="text-xs text-muted">A day count left blank in the contract stays blank here. The deal flags it as needing attention instead of guessing a date.</p>
       </Card>
       <div className="mt-3">
         <div className="mb-1 text-sm font-medium">Deadlines these terms produce</div>
@@ -196,6 +206,23 @@ export function ReviewForm(props: {
             );
           })}
         </div>
+        {props.missingOptions.length > 0 && (
+          <div className="rounded-xl border border-warn bg-warn-soft/50 p-3">
+            <div className="text-sm font-semibold text-warn">Referenced but not in the file</div>
+            <p className="text-xs text-muted">Each one you leave ticked becomes a task to get it in the file.</p>
+            <div className="mt-2 space-y-2">
+              {props.missingOptions.map((k) => (
+                <label key={k} className="flex items-start gap-3 text-sm">
+                  <input type="checkbox" name="missing_docs" value={k} defaultChecked={props.missingSelected.includes(k)} className="mt-1 h-5 w-5 accent-[var(--color-brand)]" />
+                  <span>
+                    {ADDENDA[k as AddendumKey]}
+                    <span className="block text-xs text-muted">{missingReason(k as AddendumKey)}. Goes in {SLOT_LABEL[slotForMissing(k as AddendumKey)]}.</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="block">
           <span className="text-sm font-medium">Seller's Disclosure (Para 7B)</span>
           <select name="seller_disclosure" defaultValue={v("seller_disclosure")} className={cx(inputCls, "mt-1")}>

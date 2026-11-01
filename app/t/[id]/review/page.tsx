@@ -8,6 +8,7 @@ import { ReviewForm, type ContactDraft, type FieldMeta } from "./ReviewForm";
 import type { DeadlineRule } from "@/lib/deadlines/compute";
 import { sameProperty } from "@/lib/address";
 import { AddMoreDocuments, DuplicateNotice } from "./ReviewExtras";
+import { deriveMissingDocs } from "@/lib/missing-docs";
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -89,6 +90,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     option_fee: pick("option_fee", tx.option_fee),
     option_period_days: pick("option_period_days", tx.option_period_days),
     survey_days: pick("survey_days", tx.survey_days),
+    hoa_info_days: pick("hoa_info_days", tx.hoa_info_days),
     seller_disclosure: pick("seller_disclosure", tx.seller_disclosure) ?? "unknown",
     side, agent_member_id: agentId,
   };
@@ -100,6 +102,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       meta[k] = { confidence: x.confidence, found: x.value != null, value: x.value, doc: x.doc, page: x.page, quote: x.quote, box: x.box, source: x.source };
     }
   }
+
+  // Documents the contract refers to that aren't in the file. Once an agent has confirmed a list
+  // it's kept; deals confirmed before that list existed get the reader's suggestion here.
+  const suggestedMissing = deriveMissingDocs(ex);
+  const confirmedMissing = tx.missing_docs as string[] | null;
+  const missingSelected = confirmed && confirmedMissing
+    ? confirmedMissing
+    : suggestedMissing.filter((k) => !(confirmed && (tx.addenda as string[]).includes(k)));
+  const missingOptions = [...new Set([...suggestedMissing, ...missingSelected])];
 
   const contacts: ContactDraft[] = confirmed
     ? (links ?? []).map((l: any) => ({ role: l.role, full_name: l.contacts.full_name, company: l.contacts.company ?? "", email: l.contacts.email ?? "", phone: l.contacts.phone ?? "" }))
@@ -136,6 +147,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           meta={meta}
           extractedAddenda={ex?.addenda ?? []}
           selectedAddenda={confirmed ? (tx.addenda as string[]) : (ex?.addenda ?? []).filter((a) => a.evidence === "attached").map((a) => a.key)}
+          missingOptions={missingOptions}
+          missingSelected={missingSelected}
           contacts={contacts}
           warnings={confirmed ? [] : ex?.warnings ?? []}
           docCount={docs.length}

@@ -54,17 +54,22 @@ export async function applyConfirmedTerms(opts: {
 
   // 3. Checklist: add what now applies, keep finished or not-needed tasks, drop open tasks that no longer apply.
   const { data: oldItems } = await supabase.from("checklist_items").select("rule_key, title, status").eq("transaction_id", id);
-  const list = buildChecklist({ side: terms.side, addenda: terms.addenda, financing_type: terms.financing_type, seller_disclosure: terms.seller_disclosure });
+  const list = buildChecklist({ side: terms.side, addenda: terms.addenda, financing_type: terms.financing_type, seller_disclosure: terms.seller_disclosure, missing_docs: terms.missing_docs });
   await supabase.from("checklist_items").upsert(
     list.map((i) => ({ ...i, brokerage_id: tx.brokerage_id, transaction_id: id,
       completed_at: i.status === "done" ? now : null, completed_by: i.status === "done" ? userId : null })),
     { onConflict: "transaction_id,rule_key", ignoreDuplicates: true },
   );
   const applies = new Set(list.map((i) => i.rule_key));
-  const drop = (oldItems ?? []).filter((i) => i.status === "open" && !applies.has(i.rule_key));
+  const gone = (oldItems ?? []).filter((i) => i.status === "open" && !applies.has(i.rule_key));
+  // A "get this in the file" task whose document is now attached is finished, not dropped.
+  const arrived = gone.filter((i) => i.rule_key.startsWith("missing_") && terms.addenda.includes(i.rule_key.slice("missing_".length) as never));
+  const drop = gone.filter((i) => !arrived.includes(i));
+  if (arrived.length) await supabase.from("checklist_items").update({ status: "done", completed_at: now, completed_by: userId })
+    .eq("transaction_id", id).in("rule_key", arrived.map((i) => i.rule_key));
   if (drop.length) await supabase.from("checklist_items").delete().eq("transaction_id", id).in("rule_key", drop.map((i) => i.rule_key));
   const had = new Set((oldItems ?? []).map((i) => i.rule_key));
-  const tasks = { added: list.filter((i) => !had.has(i.rule_key)).map((i) => i.title), removed: drop.map((i) => i.title) };
+  const tasks = { added: list.filter((i) => !had.has(i.rule_key)).map((i) => i.title), removed: drop.map((i) => i.title), completed: arrived.map((i) => i.title) };
 
   // 4. People (first confirm and edits only).
   if (opts.contacts) await syncContacts(supabase, tx.brokerage_id, id, userId, opts.contacts);

@@ -38,17 +38,23 @@ describe("computeDeadlines", () => {
     expect(by.option_end.due_time).toBe("17:00");
     expect(by.option_end.calculation).toContain("per contract");
   });
-  it("survey falls back to the placeholder when the contract is blank", () => {
-    expect(by.survey.due_date).toBe("2026-11-09"); // Nov 7 is Saturday
-    expect(by.survey.calculation).toContain("placeholder");
+  it("survey left blank in the contract gets no date: it's flagged, never defaulted", () => {
+    expect(by.survey).toBeUndefined();
+    expect(skipped).toEqual([expect.objectContaining({ key: "survey", kind: "unresolved" })]);
+    expect(skipped[0].reason).toContain("Para 6C");
+  });
+  it("survey with a day count in the contract uses it", () => {
+    const r = computeDeadlines(rules, { ...deal, survey_days: 10 });
+    expect(r.deadlines.find((d) => d.key === "survey")?.due_date).toBe("2026-11-09"); // Nov 7 is Saturday
+    expect(r.skipped).toEqual([]);
   });
   it("closing is the contract date", () => expect(by.closing.due_date).toBe("2026-12-04"));
-  it("nothing skipped", () => expect(skipped).toEqual([]));
 
   it("skips effective-date deadlines when the effective date is blank", () => {
     const r = computeDeadlines(rules, { ...deal, effective_date: null });
     expect(r.deadlines.map((d) => d.key)).toEqual(["closing"]);
     expect(r.skipped).toHaveLength(4);
+    expect(r.skipped.filter((x) => x.kind === "waiting")).toHaveLength(4);
   });
 });
 
@@ -87,7 +93,7 @@ describe("chain shifting", () => {
   it("adding the effective date later reports dates as added", () => {
     const before = computeDeadlines(chained, { ...deal, effective_date: null }).deadlines;
     const after = computeDeadlines(chained, deal).deadlines;
-    expect(diffDeadlines(before, after).filter((s) => s.change === "added").length).toBe(5);
+    expect(diffDeadlines(before, after).filter((s) => s.change === "added").map((s) => s.key)).toEqual(["earnest_money", "option_end", "title_commitment", "option_followup"]); // survey stays undated: the contract leaves it blank
   });
 
   it("detects cycles and skips instead of hanging", () => {

@@ -65,12 +65,15 @@ export function ChangesForm(props: {
   }, [current, proposed, use, vals, adds, rems, props.addendaAdded]);
 
   const tasks = useMemo(() => {
-    const now = buildChecklist({ side: next.side, addenda: next.addenda, financing_type: next.financing_type, seller_disclosure: next.seller_disclosure });
+    const now = buildChecklist({ side: next.side, addenda: next.addenda, financing_type: next.financing_type, seller_disclosure: next.seller_disclosure, missing_docs: next.missing_docs });
     const has = new Set(props.currentTasks.map((t) => t.rule_key));
     const keep = new Set(now.map((t) => t.rule_key));
+    const gone = props.currentTasks.filter((t) => t.status === "open" && !keep.has(t.rule_key));
+    const arrived = (t: { rule_key: string }) => t.rule_key.startsWith("missing_") && next.addenda.includes(t.rule_key.slice(8) as AddendumKey);
     return {
       added: now.filter((t) => !has.has(t.rule_key)).map((t) => t.title),
-      removed: props.currentTasks.filter((t) => t.status === "open" && !keep.has(t.rule_key)).map((t) => t.title),
+      removed: gone.filter((t) => !arrived(t)).map((t) => t.title),
+      completed: gone.filter(arrived).map((t) => t.title),
     };
   }, [next, props.currentTasks]);
 
@@ -162,11 +165,12 @@ export function ChangesForm(props: {
           <SectionTitle>Dates after this change</SectionTitle>
           <DatePreview rules={props.rules} deal={next} current={props.currentDeadlines} />
 
-          {(tasks.added.length > 0 || tasks.removed.length > 0) && (
+          {(tasks.added.length > 0 || tasks.removed.length > 0 || tasks.completed.length > 0) && (
             <>
               <SectionTitle>Checklist after this change</SectionTitle>
               <Card className="space-y-1 text-sm">
                 {tasks.added.map((t) => <div key={t}><Badge tone="good">Adds</Badge> {t}</div>)}
+                {tasks.completed.map((t) => <div key={t}><Badge tone="good">Done</Badge> {t}</div>)}
                 {tasks.removed.map((t) => <div key={t}><Badge tone="neutral">Drops</Badge> <span className="text-muted">{t}</span></div>)}
                 <p className="pt-1 text-xs text-muted">Finished tasks are never removed.</p>
               </Card>

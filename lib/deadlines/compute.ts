@@ -25,6 +25,8 @@ export type DealDates = {
   closing_date: ISODate | null;
   option_period_days: number | null;
   survey_days: number | null;
+  hoa_info_days?: number | null;   // HOA addendum, Para A
+  addenda?: readonly string[];     // confirmed addenda; rules that need one (HOA) apply only when it's there
 };
 
 export type ComputedDeadline = {
@@ -39,13 +41,27 @@ export type ComputedDeadline = {
   anchor_date: ISODate;
 };
 
-export type SkippedDeadline = { key: string; label: string; reason: string };
+/**
+ * unresolved: the contract leaves the term blank, so there is no date to give it (needs attention).
+ * waiting:    an anchor it counts from is missing.
+ * setup:      a Settings problem (loop, unknown anchor, no day count).
+ */
+export type SkippedDeadline = { key: string; label: string; reason: string; kind: "unresolved" | "waiting" | "setup" };
 
-function contractDays(key: string, deal: DealDates): number | null {
-  if (key === "option_end") return deal.option_period_days;
-  if (key === "survey") return deal.survey_days;
-  return null;
-}
+/** Deadlines whose day count is written in the contract. Blank in the contract means no date, never a default. */
+const CONTRACT_DAYS: Record<string, (d: DealDates) => number | null | undefined> = {
+  option_end: (d) => d.option_period_days,
+  survey: (d) => d.survey_days,
+  hoa_info: (d) => d.hoa_info_days,
+};
+
+/** Rules whose day count comes only from the contract when "use contract days" is on. */
+export const CONTRACT_DAY_KEYS = Object.keys(CONTRACT_DAYS);
+
+/** Deadlines that exist only when an addendum is in the file. */
+export const DEADLINE_REQUIRES: Record<string, string> = { hoa_info: "hoa" };
+
+const paraOf = (ref: string) => ref.match(/Para(?:graph)?\.?\s*[\w.]+/i)?.[0] ?? ref;
 
 export function rollForward(d: ISODate): { date: ISODate; rolled: boolean } {
   let cur = d;
@@ -76,6 +92,7 @@ export function computeDeadlines(rules: DeadlineRule[], deal: DealDates) {
   const byKey = new Map(rules.map((r) => [r.key, r]));
   const done = new Map<string, ComputedDeadline>();
   const skipped = new Map<string, SkippedDeadline>();
+  const notApplicable = new Set<string>();
   const visiting = new Set<string>();
 
   const labelOf = (anchor: string) =>
@@ -83,24 +100,32 @@ export function computeDeadlines(rules: DeadlineRule[], deal: DealDates) {
 
   function resolve(rule: DeadlineRule): ComputedDeadline | null {
     if (done.has(rule.key)) return done.get(rule.key)!;
-    if (skipped.has(rule.key)) return null;
-    const skip = (reason: string) => { skipped.set(rule.key, { key: rule.key, label: rule.label, reason }); return null; };
+    if (skipped.has(rule.key) || notApplicable.has(rule.key)) return null;
+    const skip = (reason: string, kind: SkippedDeadline["kind"] = "setup") => { skipped.set(rule.key, { key: rule.key, label: rule.label, reason, kind }); return null; };
+    const needs = DEADLINE_REQUIRES[rule.key];
+    if (needs && !(deal.addenda ?? []).includes(needs)) { notApplicable.add(rule.key); return null; }
     if (visiting.has(rule.key)) return skip("Its anchor loops back to itself. Fix it in Settings.");
     visiting.add(rule.key);
 
     let anchorDate: ISODate | null = null;
     if (rule.anchor === "effective_date" || rule.anchor === "closing_date") {
       anchorDate = deal[rule.anchor];
-      if (!isValidISO(anchorDate)) { visiting.delete(rule.key); return skip(`${labelOf(rule.anchor)} is missing`); }
+      if (!isValidISO(anchorDate)) { visiting.delete(rule.key); return skip(`${labelOf(rule.anchor)} is missing`, "waiting"); }
     } else {
       const parent = byKey.get(rule.anchor);
       if (!parent) { visiting.delete(rule.key); return skip(`Anchor "${rule.anchor}" doesn't exist`); }
       const p = resolve(parent);
-      if (!p) { visiting.delete(rule.key); return skip(`Waiting on ${parent.label}`); }
+      if (!p) { visiting.delete(rule.key); return skip(notApplicable.has(parent.key) ? `${parent.label} doesn't apply to this deal` : `Waiting on ${parent.label}`, "waiting"); }
       anchorDate = p.due_date;
     }
 
-    const fromContract = rule.use_contract_days ? contractDays(rule.key, deal) : null;
+    const fromContractTerm = rule.use_contract_days && rule.key in CONTRACT_DAYS;
+    const fromContract = fromContractTerm ? CONTRACT_DAYS[rule.key](deal) ?? null : null;
+    // The contract leaves this term blank: flag it, never fill in a default it doesn't have.
+    if (fromContractTerm && fromContract == null) {
+      visiting.delete(rule.key);
+      return skip(`The contract leaves this blank (${paraOf(rule.contract_ref)}).`, "unresolved");
+    }
     const days = fromContract ?? rule.default_days;
     if (days == null) { visiting.delete(rule.key); return skip("No day count in the contract and no default set"); }
 

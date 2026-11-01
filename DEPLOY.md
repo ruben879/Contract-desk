@@ -10,6 +10,7 @@ Done: `ruben879/contract-desk`, branch `main`. Import this repo in Vercel.
 ## 2. Supabase (a new project, separate from Rock Solid)
 1. Done Oct 30: project ref `mnzdlonnpggedektqbud`, region us-east-2 (Ohio). `vercel.json` pins the app's functions to Vercel's Cleveland region (`cle1`), next door to the database, so every page and read stays fast.
 2. **Still to do, before the first sign-in:** SQL Editor: run `supabase/migrations/0001_phase1_schema.sql`, then `0002_v3_phase1.sql`, then `0003_routing_slots.sql`, then `0004_fix_deal_insert_rls.sql`, in that order. (Production ran 0001 to 0003 on Oct 30; **0004 still needs to be run there.**)
+   **Oct 31 update (checklist fixes, comments and mentions):** in SQL Editor run `0005_checklist_gaps.sql`, then `0006_comments_mentions.sql`, **before** the new code deploys (the deal page reads the new tables). Both are additive and safe to run on the live database. Then, on Brookhollow: open **Edit details**, check the "Referenced but not in the file" box (the reader's three are pre-ticked), type **20** in **HOA information (days)**, and **Save changes**. That one save adds the three missing-document tasks, dates the HOA tasks Oct 23, and drops the invented survey date.
 3. Authentication > URL Configuration: Site URL = your Vercel URL. Add `https://YOUR-APP.vercel.app/auth/callback` to Redirect URLs.
 4. Project Settings > API: copy the URL, the anon key, and the service_role key.
 

@@ -15,7 +15,7 @@ import { DiscardDraft } from "@/components/DiscardDraft";
 
 export default async function TransactionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { supabase, brokerage, isBrokerOrStaff } = await requireMember();
+  const { supabase, brokerage, member, isBrokerOrStaff } = await requireMember();
   await expireStaleReads(brokerage.id);
 
   const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).maybeSingle();
@@ -56,19 +56,25 @@ export default async function TransactionPage({ params }: { params: Promise<{ id
     );
   }
 
-  const [{ data: deadlines }, { data: items }, { data: links }, { data: events }, { data: lastReread }] = await Promise.all([
+  const [{ data: deadlines }, { data: items }, { data: links }, { data: events }, { data: lastReread }, { data: rules }, { data: comments }, { data: team }, { data: myMentions }] = await Promise.all([
     supabase.from("deadlines").select("*").eq("transaction_id", id).order("due_date"),
     supabase.from("checklist_items").select("*").eq("transaction_id", id).order("sort"),
     supabase.from("transaction_contacts").select("role, contacts(id, full_name, company, email, phone)").eq("transaction_id", id),
     supabase.from("transaction_events").select("id, kind, summary, changes, created_at").eq("transaction_id", id).order("created_at", { ascending: false }).limit(10),
     supabaseAdmin().from("extractions").select("id, status, error, document_ids, created_at").eq("transaction_id", id).eq("kind", "amendment")
       .neq("status", "dismissed").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("deadline_rules").select("*").eq("brokerage_id", brokerage.id),
+    supabase.from("deal_comments").select("id, body, created_at, author_member_id").eq("transaction_id", id).order("created_at", { ascending: false }).limit(200),
+    supabase.from("brokerage_members").select("id, full_name, email, role, active").eq("brokerage_id", brokerage.id),
+    supabase.from("comment_mentions").select("comment_id").eq("transaction_id", id).eq("member_id", member.id).is("read_at", null),
   ]);
   const docs = await orderedDocs(supabase, id);
   return shell(
     <DealView id={id} tx={tx} today={todayIn(brokerage.timezone)} timezone={brokerage.timezone}
       deadlines={deadlines ?? []} items={items ?? []} links={links ?? []} events={events ?? []}
       lastReread={lastReread ?? null}
+      rules={rules ?? []} me={member.id} comments={comments ?? []} team={team ?? []}
+      unreadMentions={(myMentions ?? []).map((m) => m.comment_id)}
       docs={docs.map((d) => ({ id: d.id, file_name: d.file_name, url: d.url, slot: d.slot, slot_source: d.slot_source, page_count: d.page_count, is_scanned: d.is_scanned }))} />,
   );
 }

@@ -29,9 +29,10 @@ const Form = z.object({
   financing_type: z.preprocess(blank, z.enum(FINANCING_TYPES).nullable()),
   effective_date: optDate, closing_date: optDate,
   earnest_money: optNum, option_fee: optNum,
-  option_period_days: optInt, survey_days: optInt,
+  option_period_days: optInt, survey_days: optInt, hoa_info_days: optInt,
   seller_disclosure: z.preprocess(blank, z.enum(DISCLOSURE_STATUSES).nullable()),
   addenda: z.array(z.enum(ADDENDUM_KEYS as [AddendumKey, ...AddendumKey[]])),
+  missing_docs: z.array(z.enum(ADDENDUM_KEYS as [AddendumKey, ...AddendumKey[]])),
   contacts: z.array(ContactRow),
 });
 
@@ -43,8 +44,9 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
   let contacts: unknown = [];
   try { contacts = JSON.parse(String(fd.get("contacts") ?? "[]")); } catch { /* validation below */ }
   const parsed = Form.safeParse({
-    ...Object.fromEntries([...fd.entries()].filter(([k]) => k !== "addenda" && k !== "contacts")),
+    ...Object.fromEntries([...fd.entries()].filter(([k]) => k !== "addenda" && k !== "contacts" && k !== "missing_docs")),
     addenda: fd.getAll("addenda"),
+    missing_docs: fd.getAll("missing_docs"),
     contacts: (contacts as any[]).filter((c) => c?.full_name?.trim()),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form." };
@@ -57,7 +59,8 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
   try {
     await applyConfirmedTerms({
       supabase, transactionId: id, userId: user.id,
-      terms: { ...terms, property_state: terms.property_state ?? "TX" },
+      // A document ticked as attached isn't missing, whatever else was ticked.
+      terms: { ...terms, property_state: terms.property_state ?? "TX", missing_docs: terms.missing_docs.filter((k) => !terms.addenda.includes(k)) },
       agentMemberId: isBrokerOrStaff ? agent_member_id : tx.agent_member_id ?? member.id,
       contacts: people,
       event: { kind: firstConfirm ? "confirmed" : "edited" },

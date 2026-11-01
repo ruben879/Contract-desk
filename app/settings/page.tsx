@@ -5,7 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { CopyText } from "@/components/CopyText";
 import { LogoUpload } from "@/components/LogoUpload";
 import { Badge, Button, Card, SectionTitle, inputCls } from "@/components/ui";
-import { CONTRACT_ANCHORS, findCycle } from "@/lib/deadlines/compute";
+import { CONTRACT_ANCHORS, CONTRACT_DAY_KEYS, findCycle } from "@/lib/deadlines/compute";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim() || null;
 
@@ -159,10 +159,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                   {(rules ?? []).filter((o) => o.key !== r.key).map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
               </label>
-              <label className="block text-sm">
-                {r.use_contract_days ? "Fallback days (contract blank)" : "Days (negative = before)"}
-                <input name={`days_${r.id}`} defaultValue={r.default_days ?? ""} inputMode="numeric" className={`${inputCls} mt-1`} />
-              </label>
+              {r.use_contract_days && CONTRACT_DAY_KEYS.includes(r.key) ? (
+                <div className="text-sm">
+                  Days
+                  <input type="hidden" name={`days_${r.id}`} value={r.default_days ?? ""} />
+                  <p className="mt-1 rounded-xl border border-line bg-paper px-3 py-2.5 text-muted">From the contract. Blank there = needs attention, never a default.</p>
+                </div>
+              ) : (
+                <label className="block text-sm">
+                  Days (negative = before)
+                  <input name={`days_${r.id}`} defaultValue={r.default_days ?? ""} inputMode="numeric" className={`${inputCls} mt-1`} />
+                </label>
+              )}
               <label className="block text-sm">
                 Time of day (optional)
                 <input name={`time_${r.id}`} type="time" defaultValue={r.due_time?.slice(0, 5) ?? ""} className={`${inputCls} mt-1`} />
