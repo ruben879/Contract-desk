@@ -85,15 +85,18 @@ describe("Brookhollow: checklist", () => {
   it("gap 1: the slot to file it in shows on the deal", () => {
     expect(slotsFor({ ...terms, missing_docs: missing }, new Set()).map((s) => s.key)).toEqual(expect.arrayContaining(["lead_based_paint", "sellers_disclosure", "other_addenda"]));
   });
-  it("gap 2: HOA tasks carry the HOA deadline", () => {
+  it("gap 2: the HOA task carries the HOA deadline", () => {
     expect(by.hoa_request_docs.deadline_key).toBe("hoa_info");
-    expect(by.hoa_deliver_docs.deadline_key).toBe("hoa_info");
   });
   it("gap 3: the survey task is flagged as needs attention, not undated 'anytime'", () => {
     expect(by.survey.deadline_key).toBe("survey");
-    expect(taskTiming("open", null, "2026-10-05", true)).toEqual({ group: "attention", chip: { label: "No date in contract", tone: "warn" } });
+    expect(taskTiming("open", null, "2026-10-05", true)).toMatchObject({ group: "whenever", tone: "warn" });
   });
-  it("15 tasks before, 18 now: the three missing-document tasks are the only additions", () => {
+  it("one errand, one task: earnest money, appraisal and HOA pairs are single tasks", () => {
+    const keys = list.map((i) => i.rule_key);
+    for (const k of ["earnest_receipt", "fin_appraisal_received", "hoa_deliver_docs", "details_confirmed"]) expect(keys).not.toContain(k);
+  });
+  it("the three missing-document tasks are the only additions from the reader's findings", () => {
     const before = buildChecklist({ ...terms, missing_docs: null });
     expect(list.length - before.length).toBe(3);
   });

@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { Badge, ButtonLink, Card, cx, money } from "@/components/ui";
+import { ButtonLink, Card, cx, money } from "@/components/ui";
 import { ReadingPoller, RetryRereadButton } from "@/components/ReadingPoller";
-import { ChecklistToggle, MarkDoneButton, NotNeededButton, TaskMenu } from "@/components/ChecklistToggle";
+import { ChecklistToggle, NotNeededButton, TaskMenu } from "@/components/ChecklistToggle";
 import { DocumentSlots } from "@/components/DocumentSlots";
 import { DEADLINE_DISCLAIMER } from "@/components/DatePreview";
 import { dealStatus, GROUP_LABEL, taskTiming, type TaskGroup } from "@/lib/deal-status";
 import { slotsFor, SLOT_RULES } from "@/lib/slots";
 import { termsFromTx } from "@/lib/terms";
-import { daysBetween, formatDate, formatDay, formatShort, formatTime } from "@/lib/dates";
-import { FINANCING_LABELS, type FinancingType } from "@/lib/addenda";
+import { formatDay, formatShort, formatTime } from "@/lib/dates";
 import { displayError } from "@/lib/extract/errors";
 import { computeDeadlines, type DeadlineRule } from "@/lib/deadlines/compute";
 import { CommentsSection } from "@/components/Comments";
@@ -32,9 +31,24 @@ export type DealViewProps = {
   unreadMentions: string[];   // comment ids on this deal that mention me and I haven't seen
 };
 
-/** The confirmed deal: header, next action, tasks by when they're due, dates, documents, people, history. */
+/** Everything that isn't "what needs me next" lives one tap away. No counts on the headings. */
+function More({ id, title, open, children }: { id: string; title: string; open?: boolean; children: React.ReactNode }) {
+  return (
+    <details id={id} open={open} className="group scroll-mt-4 border-t border-line">
+      <summary className="flex cursor-pointer list-none items-center justify-between py-4 font-semibold">
+        {title}
+        <svg viewBox="0 0 16 16" className="h-4 w-4 text-muted transition group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6l4 4 4-4" /></svg>
+      </summary>
+      <div className="pb-5">{children}</div>
+    </details>
+  );
+}
+
+/**
+ * The confirmed deal answers three things: where it stands (one line), what needs me next
+ * (open tasks), and everything else one tap away.
+ */
 export function DealView({ id, tx, today, timezone, deadlines, items, links, events, lastReread, docs, rules, me, comments, team, unreadMentions }: DealViewProps) {
-  const brokerage = { timezone };
   const amendment = lastReread?.status === "ready" ? lastReread : null;
   const rereading = lastReread?.status === "running" || lastReread?.status === "pending";
   const rereadFailed = lastReread?.status === "failed" ? lastReread : null;
@@ -50,252 +64,189 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const mentionable = team.filter((m) => m.active && (m.role !== "agent" || m.id === tx.agent_member_id))
     .map((m) => ({ id: m.id, name: m.full_name || m.email, role: m.role }));
   const unread = new Set(unreadMentions);
-  const open = (items ?? []).filter((i) => i.status === "open")
-    .sort((a, b) => (dueOf.get(a.deadline_key)?.due_date ?? "9999").localeCompare(dueOf.get(b.deadline_key)?.due_date ?? "9999") || a.sort - b.sort);
-  const next = open[0];
 
-  const address1 = tx.property_street || "Address not set";
-  const address2 = [tx.property_city, [tx.property_state, tx.property_zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-  const all = items ?? [];
-  const doneCount = all.filter((i) => i.status !== "open").length;
+  // Where it stands: one line.
   const status = dealStatus({ status: tx.status, today, deadlines: deadlines ?? [] });
+  const side = tx.side === "both" ? "both sides" : tx.side === "buyer" ? "buyer side" : tx.side === "seller" ? "seller side" : null;
+  const statusLine = [status.label, side].filter(Boolean).join(", ");
+  const address2 = [tx.property_city, [tx.property_state, tx.property_zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const closing = dueOf.get("closing")?.due_date ?? tx.closing_date;
+  const facts = [tx.sales_price ? money(Number(tx.sales_price)) : null, closing ? `Closes ${formatDay(closing)}` : null].filter(Boolean).join(" · ");
 
-  // Tasks grouped by when they're due, so what needs doing comes first.
-  const ORDER: TaskGroup[] = ["late", "attention", "today", "week", "later", "anytime", "done"];
-  const grouped = new Map<TaskGroup, { it: (typeof all)[number]; chip: ReturnType<typeof taskTiming>["chip"]; due: string | null }[]>();
-  for (const it of all) {
+  // What needs me next: open tasks by when. The first one is next; it's marked in place.
+  const ORDER: TaskGroup[] = ["late", "upcoming", "whenever"];
+  const rows = (items ?? []).map((it) => {
     const due = dueOf.get(it.deadline_key)?.due_date ?? null;
-    const t = taskTiming(it.status, due, today, attentionOf.has(it.deadline_key));
-    grouped.set(t.group, [...(grouped.get(t.group) ?? []), { it, chip: t.chip, due }]);
-  }
-  for (const list of grouped.values()) list.sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.it.sort - b.it.sort);
-  const lateCount = grouped.get("late")?.length ?? 0;
+    const flag = !due ? attentionOf.get(it.deadline_key) : undefined;
+    const t = taskTiming(it.status, due, today, !!flag);
+    return { it, due, flag, ...t };
+  });
+  const byWhen = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    (a.flag ? 0 : 1) - (b.flag ? 0 : 1) || (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.it.sort - b.it.sort;
+  const groups = ORDER.map((g) => ({ g, list: rows.filter((r) => r.group === g).sort(byWhen) })).filter((x) => x.list.length);
+  const done = rows.filter((r) => r.group === "done").sort((a, b) => a.it.sort - b.it.sort);
+  const nextId = groups[0]?.list[0]?.it.id;
+  const showReason = (it: any) => it.rule_key?.startsWith("missing_");
 
   const slotList = slotsFor(terms, new Set(docs.map((d) => d.slot).filter((x): x is string => !!x)));
-  const filledSlots = slotList.filter((sl) => docs.some((d) => d.slot === sl.key)).length;
-
-  const Section = ({ id: anchor, title, children }: { id: string; title: string; children: React.ReactNode }) => (
-    <section id={anchor} className="scroll-mt-16 pt-6">
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      {children}
-    </section>
-  );
-  const chipTone = { brand: "bg-brand-soft text-brand", warn: "bg-warn-soft text-warn", bad: "bg-bad-soft text-bad", good: "bg-good-soft text-good", neutral: "bg-paper text-muted" };
+  const tone = { bad: "text-bad font-semibold", warn: "text-warn font-medium", muted: "text-muted" } as const;
 
   return (
     <>
       {rereading && <ReadingPoller />}
 
-      {/* Header: everything about the deal's state, readable without opening anything */}
-      <Card className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={cx("rounded-full px-2.5 py-1 text-xs font-semibold", chipTone[status.tone])}>{status.label}</span>
-          {tx.side && <span className="rounded-full bg-paper px-2.5 py-1 text-xs font-medium text-muted">{tx.side === "both" ? "Both sides" : tx.side === "buyer" ? "Buyer side" : "Seller side"}</span>}
-          <Link href={`/t/${id}/review`} className="ml-auto text-sm font-medium text-brand">Edit details</Link>
+      <header className="pb-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="text-sm font-medium text-muted">{statusLine}</div>
+          <Link href={`/t/${id}/review`} className="shrink-0 text-sm font-medium text-brand">Edit details</Link>
         </div>
-        <div>
-          <h1 className="text-xl font-bold leading-snug">{address1}</h1>
-          {address2 && <div className="text-muted">{address2}</div>}
-        </div>
-        <div className="flex flex-wrap gap-x-3 text-sm">
-          {tx.sales_price && <span className="font-semibold">{money(Number(tx.sales_price))}</span>}
-          {tx.financing_type && <span className="text-muted">{FINANCING_LABELS[tx.financing_type as FinancingType] ?? tx.financing_type}</span>}
-          {status.detail && <span className="text-muted">{status.detail}</span>}
-        </div>
-        <div>
-          <div className="h-2 overflow-hidden rounded-full bg-paper">
-            <div className="h-full rounded-full bg-good" style={{ width: `${all.length ? Math.round((doneCount / all.length) * 100) : 0}%` }} />
-          </div>
-          <div className="mt-1 text-xs text-muted">{doneCount} of {all.length} tasks handled{lateCount ? <span className="font-semibold text-bad"> · {lateCount} past due</span> : null}</div>
-        </div>
-      </Card>
+        <h1 className="mt-1 text-2xl font-bold leading-tight">{tx.property_street || "Address not set"}</h1>
+        {address2 && <div className="text-muted">{address2}</div>}
+        {facts && <div className="mt-1 font-medium">{facts}</div>}
+      </header>
 
-      {/* Jump bar with counts */}
-      <nav className="sticky top-0 z-10 -mx-4 mt-3 flex gap-1 overflow-x-auto bg-paper/95 px-4 py-2 text-sm backdrop-blur">
-        {[
-          { href: "#tasks", label: "Tasks", count: `${doneCount}/${all.length}`, alert: lateCount > 0 },
-          { href: "#dates", label: "Dates", count: String((deadlines ?? []).length), alert: attention.length > 0 },
-          { href: "#docs", label: "Docs", count: `${filledSlots}/${slotList.length}`, alert: false },
-          { href: "#people", label: "People", count: String((links ?? []).length), alert: false },
-          { href: "#comments", label: "Comments", count: String(comments.length), alert: unread.size > 0 },
-        ].map((t) => (
-          <a key={t.href} href={t.href} className="relative flex shrink-0 items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 font-medium">
-            {t.label} <span className="text-muted">{t.count}</span>
-            {t.alert && <span className={cx("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full", t.href === "#tasks" ? "bg-bad" : t.href === "#comments" ? "bg-brand" : "bg-warn")} aria-label={t.href === "#tasks" ? "past due" : t.href === "#comments" ? "unread mention" : "needs attention"} />}
-          </a>
-        ))}
-      </nav>
-
-      {amendment ? (
-        <Card className="border-warn bg-warn-soft">
-          <div className="text-xs font-semibold uppercase tracking-wide text-warn">Needs your OK</div>
-          <div className="mt-1 text-lg font-semibold">Review what changed</div>
+      {amendment && (
+        <Card className="mb-4 border-warn bg-warn-soft">
+          <div className="font-semibold">Review what changed</div>
           <p className="text-sm text-muted">We read {docName(amendment.document_ids)}. Dates and tasks won't move until you confirm.</p>
-          <div className="mt-4"><ButtonLink href={`/t/${id}/changes`} size="lg">Review changes</ButtonLink></div>
+          <div className="mt-3"><ButtonLink href={`/t/${id}/changes`}>Review changes</ButtonLink></div>
         </Card>
-      ) : rereading ? (
-        <Card className="flex items-center gap-3">
-          <div className="h-6 w-6 shrink-0 animate-spin rounded-full border-4 border-brand-soft border-t-brand" />
-          <div>
-            <div className="font-semibold">Checking {docName(lastReread!.document_ids) || "the new document"} for changes</div>
-            <div className="text-sm text-muted">If anything changed, you'll confirm it here first.</div>
-          </div>
-        </Card>
-      ) : next ? (
-        <Card className="border-brand">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-brand">Next up</div>
-            {(() => { const c = taskTiming("open", dueOf.get(next.deadline_key)?.due_date, today).chip; return c ? <span className={cx("rounded-full px-2 py-0.5 text-xs font-semibold", chipTone[c.tone])}>{c.label}</span> : null; })()}
-          </div>
-          <div className="mt-1 text-lg font-semibold leading-snug">{next.title}</div>
-          {dueOf.get(next.deadline_key) && <div className="text-sm text-muted">Due {formatDay(dueOf.get(next.deadline_key)!.due_date)}</div>}
-          {next.reason && <div className="mt-1 text-sm text-muted">{next.reason}</div>}
-          <div className="mt-4"><MarkDoneButton id={next.id} /></div>
-        </Card>
-      ) : (
-        <Card className="border-good bg-good-soft text-center font-semibold text-good">Every task is done.</Card>
       )}
-
+      {rereading && (
+        <p className="mb-4 flex items-center gap-2 text-sm text-muted">
+          <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-brand-soft border-t-brand" />
+          Checking {docName(lastReread!.document_ids) || "the new document"} for changes. Nothing moves until you confirm.
+        </p>
+      )}
       {rereadFailed && (
-        <Card className="mt-3 flex items-center justify-between gap-3 border-bad bg-bad-soft text-sm">
+        <Card className="mb-4 flex items-center justify-between gap-3 border-bad bg-bad-soft text-sm">
           <span>Couldn't check {docName(rereadFailed.document_ids)} for changes. {displayError(rereadFailed.error)}</span>
           <RetryRereadButton id={id} documentIds={rereadFailed.document_ids} />
         </Card>
       )}
 
-      <Section id="tasks" title="Tasks">
-        <div className="space-y-3">
-          {ORDER.filter((g) => g !== "done" && grouped.get(g)?.length).map((g) => (
-            <Card key={g} className="p-0 sm:p-0">
-              <div className={cx("flex items-center justify-between border-b border-line px-4 py-2 text-sm font-semibold", g === "late" && "text-bad", g === "attention" && "text-warn")}>
-                {GROUP_LABEL[g]} <span className="font-normal text-muted">{grouped.get(g)!.length}</span>
-              </div>
-              <ul className="divide-y divide-line">
-                {grouped.get(g)!.map(({ it, chip, due }) => (
-                  <li key={it.id} className="flex gap-3 px-4 py-3">
-                    <ChecklistToggle id={it.id} done={false} />
-                    <div className="min-w-0 flex-1">
-                      <div className="leading-snug">{it.title}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                        {chip && <span className={cx("rounded-full px-2 py-0.5 font-semibold", chipTone[chip.tone])}>{chip.label}</span>}
-                        {due && <span>{formatDay(due)}</span>}
-                        {!due && attentionOf.get(it.deadline_key) && <span>{attentionOf.get(it.deadline_key)!.reason}</span>}
-                        {it.reason && <span>{it.reason}</span>}
-                      </div>
-                    </div>
-                    <TaskMenu id={it.id} />
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ))}
-          {!!grouped.get("done")?.length && (
-            <details className="rounded-2xl border border-line bg-card">
-              <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-semibold">Done <span className="font-normal text-muted">{grouped.get("done")!.length}</span> <span className="font-normal text-brand">Show</span></summary>
-              <ul className="divide-y divide-line border-t border-line">
-                {grouped.get("done")!.map(({ it, chip }) => (
-                  <li key={it.id} className="flex gap-3 px-4 py-3">
-                    {it.status === "not_needed"
-                      ? <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-paper text-[10px] font-bold text-muted">N/A</span>
-                      : <ChecklistToggle id={it.id} done />}
-                    <div className="min-w-0 flex-1 leading-snug text-muted">{it.title}</div>
-                    {it.status === "not_needed" ? <NotNeededButton id={it.id} notNeeded /> : chip && <span className={cx("h-fit shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold", chipTone[chip.tone])}>{chip.label}</span>}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
-      </Section>
+      <section id="tasks" className="space-y-5 pb-6">
+        {groups.length === 0 && <p className="rounded-2xl bg-good-soft px-4 py-3 font-medium text-good">Nothing left to do on this deal.</p>}
+        {groups.map(({ g, list }) => (
+          <div key={g}>
+            <h2 className={cx("mb-1 font-semibold", g === "late" && "text-bad")}>{GROUP_LABEL[g]}</h2>
+            <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+              {list.map(({ it, when, tone: t, flag }) => (
+                <li key={it.id} className={cx("flex gap-3 px-4 py-3", it.id === nextId && "rounded-2xl ring-2 ring-brand")}>
+                  <ChecklistToggle id={it.id} done={false} />
+                  <div className="min-w-0 flex-1">
+                    <div className="leading-snug">{it.title}</div>
+                    {flag ? <div className={cx("mt-0.5 text-sm", tone.warn)}>No date. {flag.reason}</div>
+                      : when && <div className={cx("mt-0.5 text-sm", tone[t])}>{when}</div>}
+                    {showReason(it) && it.reason && <div className="mt-0.5 text-sm text-muted">{it.reason}</div>}
+                  </div>
+                  <TaskMenu id={it.id} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
 
-      <Section id="dates" title="Key dates">
-        <Card className="divide-y divide-line p-0 sm:p-0">
+      {done.length > 0 && (
+        <More id="done" title="Done">
+          <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+            {done.map(({ it }) => (
+              <li key={it.id} className="flex items-center gap-3 px-4 py-3">
+                {it.status === "not_needed"
+                  ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-paper text-[10px] font-bold text-muted">N/A</span>
+                  : <ChecklistToggle id={it.id} done />}
+                <div className="min-w-0 flex-1 leading-snug text-muted">{it.title}</div>
+                {it.status === "not_needed" && <NotNeededButton id={it.id} notNeeded />}
+              </li>
+            ))}
+          </ul>
+        </More>
+      )}
+
+      <More id="dates" title="Key dates">
+        <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
           {attention.map((a) => (
-            <div key={a.key} className="flex items-start justify-between gap-3 bg-warn-soft/50 px-4 py-3">
-              <div className="min-w-0">
-                <div className="font-medium leading-snug">{a.label}</div>
-                <div className="text-xs text-muted">{a.reason} Fill it in under <Link href={`/t/${id}/review`} className="text-brand">Edit details</Link> if the contract or an amendment sets it.</div>
+            <li key={a.key} className="px-4 py-3">
+              <div className="flex justify-between gap-3">
+                <span className="font-medium">{a.label}</span>
+                <span className="shrink-0 font-medium text-warn">No date</span>
               </div>
-              <span className="shrink-0"><Badge tone="warn">Needs attention</Badge></span>
-            </div>
+              <div className="text-sm text-muted">{a.reason} If the contract or an amendment sets it, add it in <Link href={`/t/${id}/review`} className="text-brand">Edit details</Link>.</div>
+            </li>
           ))}
-          {(deadlines ?? []).length === 0 && attention.length === 0 && <p className="p-4 text-sm text-muted">No dates yet. Add the effective date in Edit details.</p>}
-          {(deadlines ?? []).map((d) => {
-            const n = daysBetween(today, d.due_date);
-            const c = n < 0 ? { label: "Passed", tone: "neutral" as const } : n === 0 ? { label: "Today", tone: "warn" as const } : { label: `In ${n} day${n === 1 ? "" : "s"}`, tone: n <= 2 ? ("warn" as const) : ("neutral" as const) };
-            return (
-              <div key={d.id} className="flex items-start justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="font-medium leading-snug">{d.label}</div>
-                  <div className="text-xs text-muted">From {d.contract_ref}. {d.calculation}.</div>
-                  {d.needs_verification && <div className="mt-1"><Badge tone="warn">Day count not verified yet</Badge></div>}
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-semibold">{formatShort(d.due_date)}{d.due_time ? <span className="font-normal text-muted"> · {formatTime(d.due_time)}</span> : null}</div>
-                  <span className={cx("mt-0.5 inline-block rounded-full px-2 py-0.5 text-xs font-semibold", chipTone[c.tone])}>{c.label}</span>
-                </div>
+          {(deadlines ?? []).length === 0 && attention.length === 0 && <li className="px-4 py-3 text-sm text-muted">No dates yet. Add the effective date in Edit details.</li>}
+          {(deadlines ?? []).map((d) => (
+            <li key={d.id} className="px-4 py-3">
+              <div className="flex justify-between gap-3">
+                <span className="font-medium">{d.label}</span>
+                <span className="shrink-0 font-semibold">{formatShort(d.due_date)}{d.due_time ? <span className="font-normal text-muted">, {formatTime(d.due_time)}</span> : null}</span>
               </div>
-            );
-          })}
-          <p className="px-4 py-2 text-xs text-muted">{DEADLINE_DISCLAIMER}</p>
-        </Card>
-      </Section>
+              <div className="text-sm text-muted">From {d.contract_ref}. {d.calculation}.</div>
+            </li>
+          ))}
+        </ul>
+        {(deadlines ?? []).some((d) => d.needs_verification) && (
+          <p className="mt-2 text-sm font-medium text-warn">Some day counts haven't been verified in Settings yet.</p>
+        )}
+        <p className="mt-1 text-xs text-muted">{DEADLINE_DISCLAIMER}</p>
+      </More>
 
-      <Section id="docs" title="Documents">
+      <More id="docs" title="Documents">
         <DocumentSlots
           transactionId={id}
           slots={slotList.map(({ key, label, many }) => ({ key, label, many }))}
           allSlots={SLOT_RULES.map(({ key, label, many }) => ({ key, label, many }))}
           docs={docs.map((d) => ({ id: d.id, file_name: d.file_name, url: d.url, slot: d.slot, slot_source: d.slot_source, page_count: d.page_count, is_scanned: d.is_scanned }))}
         />
-      </Section>
+      </More>
 
-      <Section id="people" title="People">
-      <Card className="divide-y divide-line p-0 sm:p-0">
-        {(links ?? []).length === 0 && <p className="p-4 text-sm text-muted">No contacts on this deal yet.</p>}
-        {(links ?? []).map((l: any, i: number) => (
-          <div key={i} className="px-4 py-3">
-            <div className="text-xs text-muted">{CONTACT_LABELS[l.role]}</div>
-            <div className="font-medium">{l.contacts.full_name}{l.contacts.company && l.contacts.company !== l.contacts.full_name && <span className="font-normal text-muted"> · {l.contacts.company}</span>}</div>
-            <div className="text-sm">
-              {l.contacts.phone && <a className="text-brand" href={`tel:${l.contacts.phone}`}>{l.contacts.phone}</a>}
-              {l.contacts.phone && l.contacts.email && " · "}
-              {l.contacts.email && <span className="text-muted">{l.contacts.email}</span>}
-            </div>
-          </div>
-        ))}
-      </Card>
+      <More id="people" title="People">
+        <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+          {(links ?? []).length === 0 && <li className="px-4 py-3 text-sm text-muted">No contacts on this deal yet.</li>}
+          {(links ?? []).map((l: any, i: number) => (
+            <li key={i} className="px-4 py-3">
+              <div className="text-sm text-muted">{CONTACT_LABELS[l.role]}</div>
+              <div className="font-medium">{l.contacts.full_name}{l.contacts.company && l.contacts.company !== l.contacts.full_name && <span className="font-normal text-muted">, {l.contacts.company}</span>}</div>
+              {(l.contacts.phone || l.contacts.email) && (
+                <div className="text-sm">
+                  {l.contacts.phone && <a className="text-brand" href={`tel:${l.contacts.phone}`}>{l.contacts.phone}</a>}
+                  {l.contacts.phone && l.contacts.email && <span className="text-muted">, </span>}
+                  {l.contacts.email && <span className="text-muted">{l.contacts.email}</span>}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </More>
 
-      </Section>
-
-      <Section id="comments" title="Comments">
+      <More id="comments" title={unread.size ? "Comments, someone mentioned you" : "Comments"} open={unread.size > 0}>
         <MarkMentionsRead transactionId={id} count={unread.size} />
         <CommentsSection transactionId={id} meId={me} timezone={timezone} nameOf={nameOf} members={mentionable}
           comments={comments.map((c) => ({ ...c, unreadForMe: unread.has(c.id) }))} />
-      </Section>
+      </More>
 
       {(events ?? []).length > 0 && (
-        <>
-          <h2 className="mb-2 pt-6 text-sm font-semibold uppercase tracking-wide text-muted">History</h2>
-          <Card className="divide-y divide-line p-0 text-sm sm:p-0">
+        <More id="history" title="History">
+          <ul className="divide-y divide-line rounded-2xl border border-line bg-card text-sm">
             {events!.map((e) => {
               const moved = ((e.changes as any)?.deadlines ?? []).filter((s: any) => s.change === "moved");
               return (
-                <div key={e.id} className="px-4 py-2.5">
+                <li key={e.id} className="px-4 py-2.5">
                   <div className="flex justify-between gap-2">
                     <span className="font-medium">{e.summary}</span>
-                    <span className="shrink-0 text-xs text-muted">{new Date(e.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: brokerage.timezone })}</span>
+                    <span className="shrink-0 text-muted">{new Date(e.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: timezone })}</span>
                   </div>
                   {moved.length > 0 && (
-                    <div className="text-xs text-muted">
-                      {moved.map((s: any) => `${s.label}: ${formatShort(s.before.due_date)} → ${formatShort(s.after.due_date)}`).join(" · ")}
+                    <div className="text-muted">
+                      {moved.map((s: any) => `${s.label} moved from ${formatShort(s.before.due_date)} to ${formatShort(s.after.due_date)}`).join(". ")}
                     </div>
                   )}
-                </div>
+                </li>
               );
             })}
-          </Card>
-        </>
+          </ul>
+        </More>
       )}
     </>
   );

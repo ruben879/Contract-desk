@@ -15,13 +15,12 @@ describe("dealStatus", () => {
 });
 
 describe("taskTiming", () => {
-  it("groups by when it's due", () => {
-    expect(taskTiming("open", "2026-10-29", today)).toEqual({ group: "late", chip: { label: "2 days late", tone: "bad" } });
-    expect(taskTiming("open", today, today).group).toBe("today");
-    expect(taskTiming("open", "2026-11-01", today).chip?.label).toBe("Tomorrow");
-    expect(taskTiming("open", "2026-11-07", today).group).toBe("week");
-    expect(taskTiming("open", "2026-11-20", today).group).toBe("later");
-    expect(taskTiming("open", null, today)).toEqual({ group: "anytime", chip: null });
+  it("three groups, and lateness stated once", () => {
+    expect(taskTiming("open", "2026-10-29", today)).toEqual({ group: "late", when: "2 days late (due Oct 29)", tone: "bad" });
+    expect(taskTiming("open", today, today)).toEqual({ group: "upcoming", when: "Due today", tone: "warn" });
+    expect(taskTiming("open", "2026-11-01", today).when).toBe("Due tomorrow, Nov 1");
+    expect(taskTiming("open", "2026-11-20", today)).toEqual({ group: "upcoming", when: "Due Nov 20", tone: "muted" });
+    expect(taskTiming("open", null, today)).toEqual({ group: "whenever", when: null, tone: "muted" });
     expect(taskTiming("not_needed", "2026-10-01", today).group).toBe("done");
   });
 });

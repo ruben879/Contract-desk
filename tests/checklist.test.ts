@@ -15,7 +15,7 @@ describe("checklist triggers", () => {
     expect(keys({ ...base, addenda: ["third_party_financing"] })).toEqual(expect.arrayContaining(["fin_appraisal_ordered", "fin_buyer_approval", "fin_contract_to_lender"]));
   });
   it("HOA addendum adds HOA tasks", () => {
-    expect(keys({ ...base, addenda: ["hoa"] })).toEqual(expect.arrayContaining(["hoa_request_docs", "hoa_deliver_docs"]));
+    expect(keys({ ...base, addenda: ["hoa"] })).toEqual(expect.arrayContaining(["hoa_request_docs"]));
   });
   it("missing seller's disclosure adds the get-it-signed task", () => {
     expect(keys({ ...base, seller_disclosure: "not_received" })).toContain("get_sellers_disclosure");

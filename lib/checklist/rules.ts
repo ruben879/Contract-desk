@@ -6,6 +6,8 @@ import { SLOT_LABEL } from "@/lib/slots";
 // Every checklist task lives here. Standard tasks apply to every deal on the listed sides;
 // triggered tasks appear only when their condition matches what's in the file.
 // To add or edit a task, change this list. Keys must stay stable once deals use them.
+// One errand = one task with one done state. Merged pairs keep the first key; the second key is
+// retired (MERGED_INTO below, and migration 0007 folds it into existing deals).
 
 export type { Side };
 export type ChecklistContext = DealContext;
@@ -28,11 +30,9 @@ const MISSING_SECTION: Partial<Record<AddendumKey, ChecklistRule["section"]>> = 
 
 export const CHECKLIST_RULES: ChecklistRule[] = [
   // ---- Standard ----
-  { key: "executed_contract", title: "Executed contract in the file", section: "Contract", startsDone: true },
-  { key: "details_confirmed", title: "Contract details confirmed", section: "Contract", startsDone: true },
+  { key: "executed_contract", title: "Executed contract in the file and details confirmed", section: "Contract", startsDone: true },
   { key: "contract_to_title", title: "Send executed contract to title company", section: "Contract" },
-  { key: "earnest_delivered", title: "Earnest money and option fee delivered", section: "Contract", deadline_key: "earnest_money" },
-  { key: "earnest_receipt", title: "Earnest money receipt from title in the file", section: "Contract", deadline_key: "earnest_money" },
+  { key: "earnest_delivered", title: "Earnest money and option fee delivered, receipt from title in the file", section: "Contract", deadline_key: "earnest_money" },
 
   { key: "inspections_scheduled", title: "Schedule inspections", section: "Option period", deadline_key: "option_end", sides: buyerSide },
   { key: "option_decision", title: "Option period decision: proceed, amend, or terminate", section: "Option period", deadline_key: "option_end" },
@@ -47,9 +47,7 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
   // ---- Triggered: financing ----
   { key: "fin_contract_to_lender", title: "Send executed contract to lender", section: "Financing", sides: buyerSide,
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
-  { key: "fin_appraisal_ordered", title: "Confirm appraisal is ordered", section: "Financing",
-    when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
-  { key: "fin_appraisal_received", title: "Appraisal received", section: "Financing",
+  { key: "fin_appraisal_ordered", title: "Appraisal ordered and received", section: "Financing",
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
   { key: "fin_buyer_approval", title: "Buyer approval (financing) confirmed", section: "Financing",
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
@@ -64,9 +62,7 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
     reason: "Loan assumption is part of this deal" },
 
   // ---- Triggered: HOA ----
-  { key: "hoa_request_docs", title: "Request HOA subdivision information and resale certificate", section: "HOA", deadline_key: "hoa_info",
-    when: has("hoa"), reason: "HOA addendum is in the file" },
-  { key: "hoa_deliver_docs", title: "HOA documents delivered to buyer", section: "HOA", deadline_key: "hoa_info",
+  { key: "hoa_request_docs", title: "HOA subdivision information and resale certificate requested and delivered to buyer", section: "HOA", deadline_key: "hoa_info",
     when: has("hoa"), reason: "HOA addendum is in the file" },
   { key: "hoa_review_window", title: "Track buyer's HOA document review window", section: "HOA", sides: buyerSide,
     when: has("hoa"), reason: "HOA addendum is in the file" },
@@ -97,6 +93,14 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
     reason: `${missingReason(k)}. File it under ${SLOT_LABEL[slotForMissing(k)]}.`,
   })),
 ];
+
+/** Retired task key -> the task it was merged into. If the retired one was done, the errand is done. */
+export const MERGED_INTO: Record<string, string> = {
+  details_confirmed: "executed_contract",
+  earnest_receipt: "earnest_delivered",
+  fin_appraisal_received: "fin_appraisal_ordered",
+  hoa_deliver_docs: "hoa_request_docs",
+};
 
 export function buildChecklist(ctx: ChecklistContext) {
   return CHECKLIST_RULES

@@ -87,3 +87,23 @@ describe("migration 0005", () => {
     expect(keys).toContain("hoa_info");
   });
 });
+
+describe("migration 0007 (one errand, one task)", () => {
+  it("folds retired halves into their task, done if the retired half was done, and links the HOA deadline", async () => {
+    const { db } = await freshDb("0006");
+    const crr = await seedBrokerage(db);
+    const tx = (await db.query<{ id: string }>("insert into transactions (brokerage_id, source, status) values ($1,'upload','active') returning id", [crr.brokerageId])).rows[0].id;
+    const add = (key: string, status: string, deadline: string | null = null) => db.query(
+      "insert into checklist_items (brokerage_id, transaction_id, rule_key, title, section, status, deadline_key) values ($1,$2,$3,$3,'x',$4,$5)", [crr.brokerageId, tx, key, status, deadline]);
+    await add("earnest_delivered", "open", "earnest_money"); await add("earnest_receipt", "done", "earnest_money");
+    await add("hoa_request_docs", "open"); await add("hoa_deliver_docs", "open");
+    await add("executed_contract", "done"); await add("details_confirmed", "done");
+    const fs = await import("node:fs"); const path = await import("node:path");
+    await db.exec(fs.readFileSync(path.join(__dirname, "../../supabase/migrations/0007_merge_errand_tasks.sql"), "utf8"));
+    const rows = (await db.query<{ rule_key: string; status: string; title: string; deadline_key: string | null }>(
+      "select rule_key, status, title, deadline_key from checklist_items where transaction_id = $1 order by rule_key", [tx])).rows;
+    expect(rows.map((r) => r.rule_key)).toEqual(["earnest_delivered", "executed_contract", "hoa_request_docs"]);
+    expect(rows[0]).toMatchObject({ status: "done", title: "Earnest money and option fee delivered, receipt from title in the file" });
+    expect(rows[2]).toMatchObject({ status: "open", deadline_key: "hoa_info" });
+  });
+});

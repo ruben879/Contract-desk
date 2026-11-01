@@ -27,20 +27,26 @@ export function dealStatus(input: {
   return { label: "Under contract", tone: "brand", detail: null };
 }
 
-export type TaskGroup = "late" | "attention" | "today" | "week" | "later" | "anytime" | "done";
+export type TaskGroup = "late" | "upcoming" | "whenever" | "done";
 export const GROUP_LABEL: Record<TaskGroup, string> = {
-  late: "Past due", attention: "Needs attention", today: "Due today", week: "This week", later: "Coming up", anytime: "Anytime", done: "Done",
+  late: "Late", upcoming: "Coming up", whenever: "Whenever", done: "Done",
 };
 
-/** unresolved: the task's date depends on a term the contract leaves blank. */
-export function taskTiming(status: string, due: ISODate | null | undefined, today: ISODate, unresolved = false): { group: TaskGroup; chip: Chip | null } {
-  if (status === "done") return { group: "done", chip: { label: "Done", tone: "good" } };
-  if (status === "not_needed") return { group: "done", chip: { label: "Not needed", tone: "neutral" } };
-  if (!due && unresolved) return { group: "attention", chip: { label: "No date in contract", tone: "warn" } };
-  if (!due) return { group: "anytime", chip: null };
+/**
+ * Where a task sits and the one line that says when it's due. Lateness is stated once.
+ * unresolved: its date depends on a term the contract leaves blank (it stays flagged, never dated).
+ */
+export function taskTiming(status: string, due: ISODate | null | undefined, today: ISODate, unresolved = false): {
+  group: TaskGroup; when: string | null; tone: "bad" | "warn" | "muted";
+} {
+  if (status === "done") return { group: "done", when: null, tone: "muted" };
+  if (status === "not_needed") return { group: "done", when: "Not needed", tone: "muted" };
+  if (!due && unresolved) return { group: "whenever", when: "No date: the contract leaves it blank", tone: "warn" };
+  if (!due) return { group: "whenever", when: null, tone: "muted" };
   const n = daysBetween(today, due);
-  if (n < 0) return { group: "late", chip: { label: `${-n} day${n === -1 ? "" : "s"} late`, tone: "bad" } };
-  if (n === 0) return { group: "today", chip: { label: "Due today", tone: "warn" } };
-  if (n <= 7) return { group: "week", chip: { label: n === 1 ? "Tomorrow" : `In ${n} days`, tone: n <= 2 ? "warn" : "neutral" } };
-  return { group: "later", chip: { label: `In ${n} days`, tone: "neutral" } };
+  const date = formatShort(due);
+  if (n < 0) return { group: "late", when: `${-n} day${n === -1 ? "" : "s"} late (due ${date})`, tone: "bad" };
+  if (n === 0) return { group: "upcoming", when: "Due today", tone: "warn" };
+  if (n === 1) return { group: "upcoming", when: `Due tomorrow, ${date}`, tone: "warn" };
+  return { group: "upcoming", when: `Due ${date}`, tone: "muted" };
 }
