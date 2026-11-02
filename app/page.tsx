@@ -3,24 +3,23 @@ import { expireStaleReads } from "@/lib/extract/stale";
 import { requireMember } from "@/lib/context";
 import { AppShell } from "@/components/AppShell";
 import { Dropzone } from "@/components/Dropzone";
-import { TaskAction } from "@/components/TaskAction";
+import { TodayBoard } from "@/components/TodayBoard";
 import { StreamCardView } from "@/components/StreamCard";
 import { startUpload } from "./actions";
 import { todayIn } from "@/lib/dates";
-import { buildStream, type StreamDeal } from "@/lib/today";
+import { buildToday, type TodayDeal } from "@/lib/today";
 
 type Row = {
   id: string; status: string; property_street: string | null; property_city: string | null; agent_member_id: string | null;
   deadlines: { key: string; label: string; due_date: string }[];
-  checklist_items: StreamDeal["items"];
+  checklist_items: TodayDeal["items"];
   documents: { file_name: string }[];
 };
 const addressOf = (r: Pick<Row, "property_street" | "property_city" | "documents">) =>
   r.property_street ? [r.property_street, r.property_city].filter(Boolean).join(", ") : r.documents[0]?.file_name ?? "New contract";
 
-// Today: a ranked stream that ends, one card per deal. Things to check first (nothing can be
-// tracked until a contract is confirmed), then deals with something late, due today, and each
-// other deal's next date. The deal page carries the per-task detail.
+// Today: pinned cards first (contracts to check: nothing can be tracked until one is confirmed),
+// then a swipeable row of deals and the selected deal's tasks, one task per card.
 export default async function Today() {
   const { supabase, member, brokerage, isBrokerOrStaff } = await requireMember();
   await expireStaleReads(brokerage.id);
@@ -43,7 +42,7 @@ export default async function Today() {
   const amended = new Set((pending ?? []).map((p) => p.transaction_id));
   const toCheck = mine.filter((r) => r.status === "needs_review" || r.status === "failed" || amended.has(r.id));
   const active = mine.filter((r) => r.status === "active" && !amended.has(r.id));
-  const { cards, caughtUp } = buildStream(active.map((r) => ({ id: r.id, address: addressOf(r), deadlines: r.deadlines, items: r.checklist_items })), today);
+  const { row, stacks, caughtUp } = buildToday(active.map((r) => ({ id: r.id, address: addressOf(r), deadlines: r.deadlines, items: r.checklist_items })), today);
   const mentionDeals = [...new Map((unread ?? []).map((m: any) => [m.transaction_id, m.transactions?.property_street ?? "a deal"])).entries()];
   const nothingYet = (data ?? []).length === 0;
 
@@ -60,39 +59,33 @@ export default async function Today() {
       {nothingYet ? (
         <Dropzone start={startUpload} label="Start your first deal: drop the contract here" hint="Or tap to choose PDFs or take photos. You'll check what we read before anything is saved." />
       ) : (
-        <ol className="flex flex-col gap-3">
-          {!!toSort && (
-            <StreamCardView href="/sort" eyebrow="Email" title={toSort === 1 ? "An emailed document needs sorting" : `Emailed documents need sorting`}
-              action={<Link href="/sort" className="relative z-10 inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-[15px] font-medium text-white">Sort</Link>} />
+        <>
+          {(!!toSort || toCheck.length > 0) && (
+            <ol className="mb-4 flex flex-col gap-3">
+              {!!toSort && (
+                <StreamCardView href="/sort" eyebrow="Email" title={toSort === 1 ? "An emailed document needs sorting" : `Emailed documents need sorting`}
+                  action={<Link href="/sort" className="relative z-10 inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-[15px] font-medium text-white">Sort</Link>} />
+              )}
+              {toCheck.map((r) => {
+                const href = amended.has(r.id) ? `/t/${r.id}/changes` : `/t/${r.id}`;
+                const [title, verb] = r.status === "failed" ? ["We couldn't read this contract", "See what happened"]
+                  : amended.has(r.id) ? ["A new document may change this deal", "Review changes"] : ["Check what we read", "Check it"];
+                return (
+                  <StreamCardView key={r.id} href={href} eyebrow={addressOf(r)} title={title}
+                    when={!r.agent_member_id ? "Not assigned to an agent yet" : undefined} tone="warn"
+                    action={<Link href={href} className="relative z-10 inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-[15px] font-medium text-white">{verb}</Link>} />
+                );
+              })}
+            </ol>
           )}
-          {toCheck.map((r) => {
-            const href = amended.has(r.id) ? `/t/${r.id}/changes` : `/t/${r.id}`;
-            const [title, verb] = r.status === "failed" ? ["We couldn't read this contract", "See what happened"]
-              : amended.has(r.id) ? ["A new document may change this deal", "Review changes"] : ["Check what we read", "Check it"];
-            return (
-              <StreamCardView key={r.id} href={href} eyebrow={addressOf(r)} title={title}
-                when={!r.agent_member_id ? "Not assigned to an agent yet" : undefined} tone="warn"
-                action={<Link href={href} className="relative z-10 inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-[15px] font-medium text-white">{verb}</Link>} />
-            );
-          })}
-          {cards.map((c) => c.kind === "next" ? (
-            <StreamCardView key={`n-${c.dealId}`} href={`/t/${c.dealId}`} eyebrow={c.address} title={c.title} when={c.when} tone="muted" />
-          ) : (
-            <StreamCardView key={c.dealId} href={`/t/${c.dealId}`} eyebrow={c.address} title={c.title} when={c.when} more={c.more}
-              tone={c.kind === "late" ? "bad" : "warn"}
-              action={<TaskAction itemId={c.itemId} ruleKey={c.ruleKey} transactionId={c.dealId} />} />
-          ))}
-          <li className="px-2 py-6 text-center">
-            {caughtUp && toCheck.length === 0 && !toSort ? (
-              <>
-                <div className="text-lg font-semibold">You're caught up</div>
-                <div className="text-muted">Nothing is late or due today.</div>
-              </>
-            ) : (
-              <div className="text-muted">That's everything for today.</div>
-            )}
-          </li>
-        </ol>
+          {caughtUp && (
+            <div className="mb-4 rounded-card bg-card p-[18px] text-center shadow-card">
+              <div className="text-lg font-semibold">You're caught up</div>
+              <div className="text-muted">Nothing is late or due today.{row.length ? " Here's what's coming up." : ""}</div>
+            </div>
+          )}
+          <TodayBoard row={row} stacks={stacks} />
+        </>
       )}
     </AppShell>
   );

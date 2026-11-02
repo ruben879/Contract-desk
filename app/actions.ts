@@ -71,6 +71,8 @@ export async function setChecklistStatus(itemId: string, status: "open" | "done"
     completed_by: status === "open" ? null : user.id,
   }).eq("id", itemId).select("transaction_id").single();
   if (data) revalidatePath(`/t/${data.transaction_id}`);
+  revalidatePath("/");
+  revalidatePath("/deals");
   revalidatePath("/queue");
 }
 

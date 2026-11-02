@@ -11,17 +11,20 @@ const primary = "relative z-10 inline-flex min-h-11 items-center justify-center 
  * The one primary action for a task, with the verb on the button:
  * "Add the Seller's Disclosure" for a missing document (opens the camera or files), else "Mark done".
  */
-export function TaskAction({ itemId, ruleKey, transactionId, block }: { itemId: string; ruleKey: string; transactionId: string; block?: boolean }) {
+export function TaskAction({ itemId, ruleKey, transactionId, block, onDone }: {
+  itemId: string; ruleKey: string; transactionId: string; block?: boolean;
+  onDone?: () => void;   // called as soon as Mark done is pressed, so the card can slide away
+}) {
   const doc = missingTask(ruleKey);
   return doc
     ? <UploadAction transactionId={transactionId} slot={doc.slot} verb={doc.verb} block={block} />
-    : <MarkDone itemId={itemId} block={block} />;
+    : <MarkDone itemId={itemId} block={block} onDone={onDone} />;
 }
 
-function MarkDone({ itemId, block }: { itemId: string; block?: boolean }) {
+function MarkDone({ itemId, block, onDone }: { itemId: string; block?: boolean; onDone?: () => void }) {
   const [pending, start] = useTransition();
   return (
-    <button type="button" disabled={pending} onClick={() => start(() => setChecklistStatus(itemId, "done"))} className={cx(primary, block && "w-full")}>
+    <button type="button" disabled={pending} onClick={() => { onDone?.(); start(() => setChecklistStatus(itemId, "done")); }} className={cx(primary, block && "w-full")}>
       {pending ? "Saving..." : "Mark done"}
     </button>
   );
