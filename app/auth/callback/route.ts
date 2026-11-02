@@ -13,5 +13,8 @@ export async function GET(req: Request) {
     if (!error) return NextResponse.redirect(new URL("/", url.origin));
     console.warn("[auth] link sign-in failed", error.message);
   }
+  // No code: a link from the any-browser flow carries the sign-in after "#", which servers never
+  // see. Redirect to /login with no query; the browser keeps the "#..." part and the page finishes.
+  if (!code) return NextResponse.redirect(new URL("/login", url.origin));
   return NextResponse.redirect(new URL("/login?error=link", url.origin));
 }

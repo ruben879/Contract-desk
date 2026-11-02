@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { Button, Card, inputCls } from "@/components/ui";
 import { APP_NAME } from "@/lib/brand";
+import { requestSignIn } from "./actions";
 
 // Sign in without leaving the app: an emailed code typed right here, or a password.
 // (Links open in Safari, not in the home-screen app, so they sign in the wrong place on iPhone.)
@@ -32,8 +33,23 @@ export default function Login() {
 
   useEffect(() => {
     try { const e = localStorage.getItem(EMAIL_KEY); if (e) setEmail(e); } catch { /* private mode */ }
-    if (new URLSearchParams(window.location.search).get("error") === "link")
-      setError("That link didn't work here. Enter your email and use a code instead.");
+    // Arriving from an emailed link: the sign-in rides in the address after "#". Works in any browser.
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const access_token = hash.get("access_token"), refresh_token = hash.get("refresh_token");
+    if (access_token && refresh_token) {
+      setBusy(true);
+      sb.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+        if (error) { setBusy(false); setError("That link didn't work. Enter your email to get a new one."); history.replaceState(null, "", "/login"); }
+        else window.location.replace("/");
+      });
+      return;
+    }
+    if (hash.get("error_code") === "otp_expired") setError("That link expired or was already used. Enter your email to get a new one.");
+    else if (hash.get("error")) setError("That link didn't work. Enter your email to get a new one.");
+    else if (new URLSearchParams(window.location.search).get("error") === "link")
+      setError("That link was opened in a different browser. Enter your email to get a new one; new links work anywhere.");
+    if (window.location.hash) history.replaceState(null, "", window.location.pathname + window.location.search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { if (step === "code") codeInput.current?.focus(); }, [step]);
 
@@ -43,11 +59,9 @@ export default function Login() {
   async function sendCode(e?: React.FormEvent) {
     e?.preventDefault();
     setBusy(true); setError(null);
-    const { error } = await sb.auth.signInWithOtp({
-      email: email.trim(), options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    });
+    const res = await requestSignIn(email);
     setBusy(false);
-    if (error) setError(sendError(error));
+    if (!res.ok) setError(sendError(res));
     else { remember(); setCode(""); setStep("code"); }
   }
 
@@ -75,7 +89,7 @@ export default function Login() {
           <form onSubmit={sendCode} className="space-y-3">
             <label className="block text-sm font-medium" htmlFor="email">Work email</label>
             <input id="email" className={inputCls} type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Button size="lg" disabled={busy}>{busy ? "Sending..." : "Email me a sign-in code"}</Button>
+            <Button size="lg" disabled={busy}>{busy ? "One moment..." : "Email me a sign-in code"}</Button>
             <button type="button" onClick={() => { setError(null); setStep("password"); }} className="w-full text-center text-sm font-medium text-brand">
               Use my password instead
             </button>
@@ -84,7 +98,7 @@ export default function Login() {
 
         {step === "code" && (
           <form onSubmit={(e) => { e.preventDefault(); verify(code); }} className="space-y-3">
-            <p className="text-sm">We emailed a code to <b>{email}</b>. Type it here; you don't need to tap the link.</p>
+            <p className="text-sm">We emailed <b>{email}</b>. Type the code here, or tap the link in the email.</p>
             <input ref={codeInput} className={`${inputCls} text-center text-2xl tracking-[0.4em]`} inputMode="numeric" autoComplete="one-time-code"
               placeholder="000000" maxLength={10} value={code} aria-label="Sign-in code"
               onChange={(e) => {
