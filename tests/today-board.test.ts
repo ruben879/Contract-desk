@@ -74,7 +74,7 @@ describe("Today: each deal's tasks are a deck", () => {
     const deck = deckOf(root, "b");
     expect(deck.querySelectorAll("article")).toHaveLength(1);           // not laid out as a list
     expect(deck.querySelectorAll(".pback")).toHaveLength(2);            // edges of the cards behind
-    expect(text(deck.querySelector("[data-count]"))).toBe("1 of 6");
+    expect(text(deck.querySelector("[data-count]"))).toBe("1 of 5");             // tasks only, not the Open card
     expect(text(front(deck))).toBe(BROOKHOLLOW[0]);                     // most urgent in front
   });
   it("the rest of the deck is in deal-page order, and the last card is 'Open deal to see more'", async () => {
@@ -83,6 +83,16 @@ describe("Today: each deal's tasks are a deck", () => {
     expect(front(deck).getAttribute("data-card")).toBe("open-deal");
     expect(front(deck).querySelector("a")!.getAttribute("href")).toBe("/t/b");
     expect(deck.querySelectorAll(".pback")).toHaveLength(0);
+    expect(deck.querySelector("[data-count]")).toBeNull();               // counter and chevrons hide on the Open card
+    expect(deck.querySelector('button[aria-label="Previous task"]')).toBeNull();
+  });
+  it("the last task reads 5 of 5; one position indicator, no hint line, no dots", async () => {
+    const deck = deckOf(await render([brookhollow]), "b");
+    for (let k = 0; k < 4; k++) await press(deck.querySelector('button[aria-label="Next task"]'));
+    expect(text(deck.querySelector("[data-count]"))).toBe("5 of 5");
+    expect(deck.textContent).not.toContain("Swipe left or right");
+    expect(deck.querySelectorAll("[data-count]")).toHaveLength(1);
+    expect(deck.querySelector(".rounded-full.h-\\[7px\\]")).toBeNull();
   });
   it("goes back as well as forward", async () => {
     const deck = deckOf(await render([brookhollow]), "b");
@@ -96,7 +106,7 @@ describe("Today: each deal's tasks are a deck", () => {
     const deck = deckOf(await render([brookhollow]), "b");
     await press(front(deck).querySelector("button"));
     expect(text(front(deck))).toBe(BROOKHOLLOW[1]);
-    expect(text(deck.querySelector("[data-count]"))).toBe("1 of 5");
+    expect(text(deck.querySelector("[data-count]"))).toBe("1 of 4");
   });
   it("a deck whose tasks are all done is just the 'Open deal to see more' card", async () => {
     const deck = deckOf(await render([oak]), "o");

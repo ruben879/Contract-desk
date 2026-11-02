@@ -1,15 +1,18 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { StackCard } from "@/lib/today";
 import { TaskAction } from "./TaskAction";
 import { cx } from "./ui";
 
 // One deal's tasks as a DECK, mirroring Rock Solid's Today deck (src/views/agent.tsx, ".deck"):
-// - "1 of N" between back and forward chevrons, with "Swipe left or right" until you've swiped a few times
+// - "1 of N" between back and forward chevrons. N counts TASKS only (how much work is in this deck);
+//   the closing "Open deal to see more" card is never counted, and when it's in front the line hides
 // - the cards behind peek out the top, a little narrower each (up to two edges)
 // - drag sideways to move, in both directions; past the first or last card it only gives a little
-// - the card slides in from the side you came from; dots underneath
+// - the card slides in from the side you came from
+// Rock Solid's "Swipe left or right" hint and dots are left out: the chevrons and card edges teach
+// the gesture, and "1 of N" is the one position indicator.
 // One task per card, each with its own button. Mark done drops that card and the next comes forward.
 // The last card is always "Open deal to see more". Gray edges instead of Rock Solid's gold, since
 // gold reads as amber ("due soon") here.
@@ -20,17 +23,13 @@ const chev = (d: "l" | "r") => (
     <path d={d === "l" ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} />
   </svg>
 );
-const SWIPES_KEY = "cd-swipes";
-const readSwipes = () => { try { return Number(localStorage.getItem(SWIPES_KEY) ?? 0) || 0; } catch { return 0; } };
 
 export function TaskDeck({ dealId, address, tasks }: { dealId: string; address: string; tasks: StackCard[] }) {
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [pos, setPos] = useState(0);
   const [enter, setEnter] = useState<"next" | "prev" | "none">("none");
   const [drag, setDrag] = useState(0);
-  const [swipes, setSwipes] = useState<number | null>(null);   // null until read in the browser
   const touch = useRef<{ x: number; y: number; dir: "h" | "v" | null } | null>(null);
-  useEffect(() => { setSwipes(readSwipes()); }, []);
 
   const live = tasks.filter((t) => !gone.has(t.itemId));
   const n = live.length + 1;                       // + the "Open deal to see more" card
@@ -44,23 +43,16 @@ export function TaskDeck({ dealId, address, tasks }: { dealId: string; address: 
     setEnter(d > 0 ? "next" : "prev");
     setPos(j);
   };
-  const countSwipe = () => {
-    const k = (swipes ?? readSwipes()) + 1;
-    setSwipes(k);
-    try { localStorage.setItem(SWIPES_KEY, String(k)); } catch { /* fine */ }
-  };
   const shown = (i === 0 && drag > 0) || (i === n - 1 && drag < 0) ? drag / 4 : drag;
-  const hint = n > 1 && (swipes ?? 0) < 3;
 
   return (
     <div className="deck" data-deck={dealId}>
-      {n > 1 && (
+      {card && (
         <div className="mb-3.5 flex h-10 items-center justify-center gap-[18px] text-[17px] font-semibold">
           <button type="button" aria-label="Previous task" disabled={i === 0} onClick={() => go(-1)}
             className="grid h-10 w-10 place-items-center rounded-full text-muted hover:bg-paper disabled:opacity-25">{chev("l")}</button>
           <span className="text-center leading-tight" aria-live="polite">
-            <span data-count>{i + 1} of {n}</span>
-            {hint && <small className="block text-[13px] font-normal text-muted">Swipe left or right</small>}
+            <span data-count>{i + 1} of {live.length}</span>
           </span>
           <button type="button" aria-label="Next task" disabled={i === n - 1} onClick={() => go(1)}
             className="grid h-10 w-10 place-items-center rounded-full text-muted hover:bg-paper disabled:opacity-25">{chev("r")}</button>
@@ -87,7 +79,6 @@ export function TaskDeck({ dealId, address, tasks }: { dealId: string; address: 
             const d = drag;
             touch.current = null;
             setDrag(0);
-            if (Math.abs(d) > 60) countSwipe();
             if (d < -60) go(1);
             else if (d > 60) go(-1);
           }}>
@@ -110,13 +101,6 @@ export function TaskDeck({ dealId, address, tasks }: { dealId: string; address: 
         </article>
       </div>
 
-      {n > 1 && n <= 20 && (
-        <div aria-hidden className="mt-3.5 flex justify-center gap-1.5">
-          {Array.from({ length: n }, (_, j) => (
-            <span key={j} className={cx("h-[7px] w-[7px] rounded-full transition", j === i ? "scale-125 bg-brand" : "bg-line")} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
