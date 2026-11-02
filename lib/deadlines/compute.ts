@@ -26,6 +26,7 @@ export type DealDates = {
   option_period_days: number | null;
   survey_days: number | null;
   hoa_info_days?: number | null;   // HOA addendum, Para A
+  fin_approval_days?: number | null; // Third Party Financing Addendum, Para 2A (buyer approval)
   addenda?: readonly string[];     // confirmed addenda; rules that need one (HOA) apply only when it's there
 };
 
@@ -53,13 +54,14 @@ const CONTRACT_DAYS: Record<string, (d: DealDates) => number | null | undefined>
   option_end: (d) => d.option_period_days,
   survey: (d) => d.survey_days,
   hoa_info: (d) => d.hoa_info_days,
+  fin_approval: (d) => d.fin_approval_days,
 };
 
 /** Rules whose day count comes only from the contract when "use contract days" is on. */
 export const CONTRACT_DAY_KEYS = Object.keys(CONTRACT_DAYS);
 
 /** Deadlines that exist only when an addendum is in the file. */
-export const DEADLINE_REQUIRES: Record<string, string> = { hoa_info: "hoa" };
+export const DEADLINE_REQUIRES: Record<string, string> = { hoa_info: "hoa", fin_approval: "third_party_financing" };
 
 const paraOf = (ref: string) => ref.match(/Para(?:graph)?\.?\s*[\w.]+/i)?.[0] ?? ref;
 

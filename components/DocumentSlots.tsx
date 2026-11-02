@@ -75,7 +75,7 @@ export function DocumentSlots({ transactionId, slots, allSlots, docs }: { transa
   return (
     <div>
       <div className="mb-2 text-xs text-muted">{filledCount} of {slots.length} filed. Drop a PDF on a row, or tap Add to use your phone's camera. New documents are checked for changes.</div>
-      <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+      <ul className="divide-y divide-line rounded-card bg-card shadow-card">
         {unfiled.length > 0 && (
           <li className="bg-warn-soft/50 px-4 py-3">
             <div className="text-sm font-medium">Not filed yet</div>

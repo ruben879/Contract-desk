@@ -79,7 +79,7 @@ export function ReviewForm(props: {
   const [dates, setDates] = useState({
     effective_date: v("effective_date") || null, closing_date: v("closing_date") || null,
     option_period_days: num(v("option_period_days")), survey_days: num(v("survey_days")),
-    hoa_info_days: num(v("hoa_info_days")), addenda: props.selectedAddenda,
+    hoa_info_days: num(v("hoa_info_days")), fin_approval_days: num(v("fin_approval_days")), addenda: props.selectedAddenda,
   });
   const flagged = Object.values(meta).filter(needsLook).length;
   const found = new Map(props.extractedAddenda.map((a) => [a.key, a]));
@@ -92,7 +92,7 @@ export function ReviewForm(props: {
       setDates({
         effective_date: String(fd.get("effective_date") || "") || null, closing_date: String(fd.get("closing_date") || "") || null,
         option_period_days: num(fd.get("option_period_days")), survey_days: num(fd.get("survey_days")),
-        hoa_info_days: num(fd.get("hoa_info_days")), addenda: fd.getAll("addenda").map(String),
+        hoa_info_days: num(fd.get("hoa_info_days")), fin_approval_days: num(fd.get("fin_approval_days")), addenda: fd.getAll("addenda").map(String),
       });
     }}>
       <h1 className="text-xl font-bold">{confirmed ? "Edit deal details" : "Check what we read"}</h1>
@@ -175,6 +175,9 @@ export function ReviewForm(props: {
           <FieldInput {...F({ name: "survey_days", label: "Survey (days)", inputMode: "numeric" })} />
           {(dates.addenda.includes("hoa") || values.hoa_info_days != null) && (
             <FieldInput {...F({ name: "hoa_info_days", label: "HOA information (days)", inputMode: "numeric" })} />
+          )}
+          {(dates.addenda.includes("third_party_financing") || values.fin_approval_days != null) && (
+            <FieldInput {...F({ name: "fin_approval_days", label: "Buyer approval (days)", inputMode: "numeric" })} />
           )}
         </div>
         <p className="text-xs text-muted">A day count left blank in the contract stays blank here. The deal flags it as needing attention instead of guessing a date.</p>

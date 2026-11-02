@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ButtonLink, Card, cx, money } from "@/components/ui";
+import { TaskAction } from "@/components/TaskAction";
 import { ReadingPoller, RetryRereadButton } from "@/components/ReadingPoller";
 import { ChecklistToggle, NotNeededButton, TaskMenu } from "@/components/ChecklistToggle";
 import { DocumentSlots } from "@/components/DocumentSlots";
@@ -73,23 +74,26 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const closing = dueOf.get("closing")?.due_date ?? tx.closing_date;
   const facts = [tx.sales_price ? money(Number(tx.sales_price)) : null, closing ? `Closes ${formatDay(closing)}` : null].filter(Boolean).join(" · ");
 
-  // What needs me next: open tasks by when. The first one is next; it's marked in place.
-  const ORDER: TaskGroup[] = ["late", "upcoming", "whenever"];
+  // What needs me next: one focus card for the single next task (not repeated below), then the
+  // rest by when: Late, Coming up, Waiting on paper (resolved by an upload), Whenever (the
+  // contract gives no date). The system keeps these groups from dates; nobody files tasks by hand.
+  const ORDER: TaskGroup[] = ["late", "upcoming", "paper", "whenever"];
   const rows = (items ?? []).map((it) => {
     const due = dueOf.get(it.deadline_key)?.due_date ?? null;
     const flag = !due ? attentionOf.get(it.deadline_key) : undefined;
-    const t = taskTiming(it.status, due, today, !!flag);
+    const t = taskTiming(it.status, due, today, !!flag, String(it.rule_key ?? "").startsWith("missing_"));
     return { it, due, flag, ...t };
   });
   const byWhen = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
     (a.flag ? 0 : 1) - (b.flag ? 0 : 1) || (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.it.sort - b.it.sort;
-  const groups = ORDER.map((g) => ({ g, list: rows.filter((r) => r.group === g).sort(byWhen) })).filter((x) => x.list.length);
+  const sorted = ORDER.flatMap((g) => rows.filter((r) => r.group === g).sort(byWhen));
+  const focus = sorted[0];
+  const groups = ORDER.map((g) => ({ g, list: sorted.filter((r) => r.group === g && r !== focus) })).filter((x) => x.list.length);
   const done = rows.filter((r) => r.group === "done").sort((a, b) => a.it.sort - b.it.sort);
-  const nextId = groups[0]?.list[0]?.it.id;
-  const showReason = (it: any) => it.rule_key?.startsWith("missing_");
+  const reasonOf = (it: any) => (String(it.rule_key ?? "").startsWith("missing_") ? it.reason : null);
 
   const slotList = slotsFor(terms, new Set(docs.map((d) => d.slot).filter((x): x is string => !!x)));
-  const tone = { bad: "text-bad font-semibold", warn: "text-warn font-medium", muted: "text-muted" } as const;
+  const tone = { bad: "text-bad font-medium", warn: "text-warn font-medium", muted: "text-muted" } as const;
 
   return (
     <>
@@ -100,13 +104,13 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
           <div className="text-sm font-medium text-muted">{statusLine}</div>
           <Link href={`/t/${id}/review`} className="shrink-0 text-sm font-medium text-brand">Edit details</Link>
         </div>
-        <h1 className="mt-1 text-2xl font-bold leading-tight">{tx.property_street || "Address not set"}</h1>
+        <h1 className="mt-1 text-[26px] font-semibold leading-tight tracking-[-0.01em]">{tx.property_street || "Address not set"}</h1>
         {address2 && <div className="text-muted">{address2}</div>}
         {facts && <div className="mt-1 font-medium">{facts}</div>}
       </header>
 
       {amendment && (
-        <Card className="mb-4 border-warn bg-warn-soft">
+        <Card className="mb-4 bg-warn-soft">
           <div className="font-semibold">Review what changed</div>
           <p className="text-sm text-muted">We read {docName(amendment.document_ids)}. Dates and tasks won't move until you confirm.</p>
           <div className="mt-3"><ButtonLink href={`/t/${id}/changes`}>Review changes</ButtonLink></div>
@@ -119,26 +123,40 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
         </p>
       )}
       {rereadFailed && (
-        <Card className="mb-4 flex items-center justify-between gap-3 border-bad bg-bad-soft text-sm">
+        <Card className="mb-4 flex items-center justify-between gap-3 bg-bad-soft text-sm">
           <span>Couldn't check {docName(rereadFailed.document_ids)} for changes. {displayError(rereadFailed.error)}</span>
           <RetryRereadButton id={id} documentIds={rereadFailed.document_ids} />
         </Card>
       )}
 
-      <section id="tasks" className="space-y-5 pb-6">
-        {groups.length === 0 && <p className="rounded-2xl bg-good-soft px-4 py-3 font-medium text-good">Nothing left to do on this deal.</p>}
+      {focus && (
+        <section aria-label="Next" className="mb-6 rounded-card bg-card p-[18px] shadow-card">
+          <div className="text-sm font-medium text-muted">Next</div>
+          <div className="mt-0.5 text-[19px] font-semibold leading-snug">{focus.it.title}</div>
+          {focus.flag ? <div className={cx("mt-1", tone.warn)}>No date. {focus.flag.reason}</div>
+            : focus.when && <div className={cx("mt-1", tone[focus.tone])}>{focus.when}</div>}
+          {reasonOf(focus.it) && <div className="mt-1 text-[15px] text-muted">{reasonOf(focus.it)}</div>}
+          <div className="mt-4 flex items-center gap-4">
+            <TaskAction itemId={focus.it.id} ruleKey={focus.it.rule_key} transactionId={id} />
+            <TaskMenu id={focus.it.id} />
+          </div>
+        </section>
+      )}
+
+      <section id="tasks" className="space-y-6 pb-6">
+        {!focus && <p className="rounded-card bg-card p-[18px] font-medium shadow-card">Nothing left to do on this deal.</p>}
         {groups.map(({ g, list }) => (
           <div key={g}>
-            <h2 className={cx("mb-1 font-semibold", g === "late" && "text-bad")}>{GROUP_LABEL[g]}</h2>
-            <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+            <h2 className={cx("mb-2 text-[15px] font-semibold", g === "late" && "text-bad")}>{GROUP_LABEL[g]}</h2>
+            <ul className="overflow-hidden rounded-card bg-card shadow-card">
               {list.map(({ it, when, tone: t, flag }) => (
-                <li key={it.id} className={cx("flex gap-3 px-4 py-3", it.id === nextId && "rounded-2xl ring-2 ring-brand")}>
+                <li key={it.id} className="flex gap-3 border-b border-line px-4 py-3.5 last:border-b-0">
                   <ChecklistToggle id={it.id} done={false} />
                   <div className="min-w-0 flex-1">
                     <div className="leading-snug">{it.title}</div>
-                    {flag ? <div className={cx("mt-0.5 text-sm", tone.warn)}>No date. {flag.reason}</div>
-                      : when && <div className={cx("mt-0.5 text-sm", tone[t])}>{when}</div>}
-                    {showReason(it) && it.reason && <div className="mt-0.5 text-sm text-muted">{it.reason}</div>}
+                    {flag ? <div className={cx("mt-0.5 text-[15px]", tone.warn)}>No date. {flag.reason}</div>
+                      : when && <div className={cx("mt-0.5 text-[15px]", tone[t])}>{when}</div>}
+                    {reasonOf(it) && <div className="mt-0.5 text-[15px] text-muted">{reasonOf(it)}</div>}
                   </div>
                   <TaskMenu id={it.id} />
                 </li>
@@ -150,7 +168,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
 
       {done.length > 0 && (
         <More id="done" title="Done">
-          <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+          <ul className="divide-y divide-line rounded-card bg-card shadow-card">
             {done.map(({ it }) => (
               <li key={it.id} className="flex items-center gap-3 px-4 py-3">
                 {it.status === "not_needed"
@@ -165,7 +183,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
       )}
 
       <More id="dates" title="Key dates">
-        <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+        <ul className="divide-y divide-line rounded-card bg-card shadow-card">
           {attention.map((a) => (
             <li key={a.key} className="px-4 py-3">
               <div className="flex justify-between gap-3">
@@ -202,7 +220,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
       </More>
 
       <More id="people" title="People">
-        <ul className="divide-y divide-line rounded-2xl border border-line bg-card">
+        <ul className="divide-y divide-line rounded-card bg-card shadow-card">
           {(links ?? []).length === 0 && <li className="px-4 py-3 text-sm text-muted">No contacts on this deal yet.</li>}
           {(links ?? []).map((l: any, i: number) => (
             <li key={i} className="px-4 py-3">
@@ -228,7 +246,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
 
       {(events ?? []).length > 0 && (
         <More id="history" title="History">
-          <ul className="divide-y divide-line rounded-2xl border border-line bg-card text-sm">
+          <ul className="divide-y divide-line rounded-card bg-card shadow-card text-sm">
             {events!.map((e) => {
               const moved = ((e.changes as any)?.deadlines ?? []).filter((s: any) => s.change === "moved");
               return (

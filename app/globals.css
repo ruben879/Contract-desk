@@ -1,23 +1,35 @@
 @import "tailwindcss";
 
-/* One palette file. Swap these to match Rock Solid exactly. */
+/*
+  Same visual language as Rock Solid (ruben879/rock-solid, src/styles.css): whites, grays, navy,
+  Lexend, soft white cards on a cool gray page. Values copied from Rock Solid, not approximated.
+  Rules:
+  - Navy means "you can act on this": buttons, links, the one primary action. Never decoration.
+  - Saturated color is state only: red = late, amber = due soon or needs attention, green = done.
+  - Every text color holds at least 4.5:1 on white and on the page gray (read in cars, in sun).
+*/
 @theme {
-  --color-ink: #1f2a2e;
-  --color-muted: #66747a;
-  --color-line: #e4e1da;
-  --color-paper: #f7f5f0;
-  --color-card: #ffffff;
-  --color-brand: #1f6f68;
-  --color-brand-dark: #17544f;
-  --color-brand-soft: #e3f0ee;
-  --color-warn: #a15c07;
-  --color-warn-soft: #fdf1dc;
-  --color-bad: #b42318;
-  --color-bad-soft: #fde8e6;
-  --color-good: #1d7a3e;
-  --color-good-soft: #e3f4e8;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-paper: #f4f6fa;      /* Rock Solid --bg */
+  --color-card: #ffffff;       /* --surface */
+  --color-ink: #1a2238;        /* --ink      15.8:1 on white */
+  --color-muted: #5d6781;      /* --muted     5.6:1 on white, 5.2:1 on page */
+  --color-line: #e2e7f0;       /* --line */
+  --color-brand: #1e3a6e;      /* --navy     11.1:1, the action color */
+  --color-brand-dark: #2a4f8f; /* --navy-2, hover */
+  --color-brand-soft: #e9eef7; /* navy tint for selected states */
+  --color-bad: #c2423a;        /* --bad: late. 5.1:1 on white */
+  --color-bad-soft: #f9eceb;
+  --color-warn: #7a5a12;       /* --gold-ink: due soon / needs attention as text. 6.4:1 */
+  --color-warn-soft: #fbf3df;  /* --gold-soft */
+  --color-warn-fill: #e0a21a;  /* --behind: amber fills only, never text */
+  --color-good: #13806a;       /* --good: done. 4.9:1 on white (green text only on white cards) */
+  --color-good-soft: #e3f4ef;
+  --font-sans: "Lexend", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-card: 18px;         /* --r */
+  --shadow-card: 0 1px 2px rgba(20, 32, 58, .06);
 }
 
-body { background: var(--color-paper); color: var(--color-ink); }
+body { background: var(--color-paper); color: var(--color-ink); font-size: 16px; line-height: 1.5; }
 input, select, textarea { font-size: 16px; } /* no iOS zoom on focus */
+:focus-visible { outline: 3px solid var(--color-brand-dark); outline-offset: 2px; border-radius: 6px; }
+details > summary::-webkit-details-marker { display: none; }

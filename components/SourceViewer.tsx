@@ -167,7 +167,7 @@ export function SourceLayout({ docs, children }: { docs: ViewerDoc[]; children: 
         <div className="min-w-0">{children}</div>
         {desktop && (
           <aside>
-            <div className="sticky top-4 h-[calc(100dvh-2rem)] overflow-hidden rounded-2xl border border-line bg-card">
+            <div className="sticky top-4 h-[calc(100dvh-2rem)] overflow-hidden rounded-card bg-card shadow-card">
               <Viewer docs={docs} target={active} />
             </div>
           </aside>

@@ -31,7 +31,7 @@ const MISSING_SECTION: Partial<Record<AddendumKey, ChecklistRule["section"]>> = 
 export const CHECKLIST_RULES: ChecklistRule[] = [
   // ---- Standard ----
   { key: "executed_contract", title: "Executed contract in the file and details confirmed", section: "Contract", startsDone: true },
-  { key: "contract_to_title", title: "Send executed contract to title company", section: "Contract" },
+  { key: "contract_to_title", title: "Send executed contract to title company", section: "Contract", deadline_key: "earnest_money" },
   { key: "earnest_delivered", title: "Earnest money and option fee delivered, receipt from title in the file", section: "Contract", deadline_key: "earnest_money" },
 
   { key: "inspections_scheduled", title: "Schedule inspections", section: "Option period", deadline_key: "option_end", sides: buyerSide },
@@ -45,26 +45,24 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
   { key: "closed", title: "Closed and funded", section: "Closing", deadline_key: "closing" },
 
   // ---- Triggered: financing ----
-  { key: "fin_contract_to_lender", title: "Send executed contract to lender", section: "Financing", sides: buyerSide,
+  { key: "fin_contract_to_lender", title: "Send executed contract to lender", section: "Financing", sides: buyerSide, deadline_key: "earnest_money",
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
-  { key: "fin_appraisal_ordered", title: "Appraisal ordered and received", section: "Financing",
+  { key: "fin_appraisal_ordered", title: "Appraisal ordered and received", section: "Financing", deadline_key: "fin_approval",
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
-  { key: "fin_buyer_approval", title: "Buyer approval (financing) confirmed", section: "Financing",
+  { key: "fin_buyer_approval", title: "Buyer approval (financing) confirmed", section: "Financing", deadline_key: "fin_approval",
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
   { key: "fin_clear_to_close", title: "Lender clear to close", section: "Financing", deadline_key: "closing",
     when: has("third_party_financing"), reason: "Third Party Financing Addendum is in the file" },
 
-  { key: "seller_fin_terms", title: "Seller financing terms documented and sent to title", section: "Financing",
+  { key: "seller_fin_terms", title: "Seller financing terms documented and sent to title", section: "Financing", deadline_key: "closing",
     when: (c) => c.addenda.includes("seller_financing") || c.financing_type === "seller_financing",
     reason: "Seller financing is part of this deal" },
-  { key: "assumption_approval", title: "Loan assumption approval from lender", section: "Financing",
+  { key: "assumption_approval", title: "Loan assumption approval from lender", section: "Financing", deadline_key: "closing",
     when: (c) => c.addenda.includes("loan_assumption") || c.financing_type === "loan_assumption",
     reason: "Loan assumption is part of this deal" },
 
   // ---- Triggered: HOA ----
   { key: "hoa_request_docs", title: "HOA subdivision information and resale certificate requested and delivered to buyer", section: "HOA", deadline_key: "hoa_info",
-    when: has("hoa"), reason: "HOA addendum is in the file" },
-  { key: "hoa_review_window", title: "Track buyer's HOA document review window", section: "HOA", sides: buyerSide,
     when: has("hoa"), reason: "HOA addendum is in the file" },
 
   // ---- Triggered: disclosures ----
@@ -78,7 +76,7 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
   // ---- Triggered: other ----
   { key: "other_property_sale", title: "Track buyer's sale of other property contingency", section: "Other",
     when: has("sale_of_other_property"), reason: "Sale of Other Property addendum is in the file" },
-  { key: "temp_lease_terms", title: "Confirm temporary lease terms and possession date", section: "Other",
+  { key: "temp_lease_terms", title: "Confirm temporary lease terms and possession date", section: "Other", deadline_key: "closing",
     when: (c) => c.addenda.includes("buyers_temp_lease") || c.addenda.includes("sellers_temp_lease"),
     reason: "A temporary residential lease is in the file" },
   { key: "backup_status", title: "Track status of the primary contract", section: "Other",

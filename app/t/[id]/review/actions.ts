@@ -29,7 +29,7 @@ const Form = z.object({
   financing_type: z.preprocess(blank, z.enum(FINANCING_TYPES).nullable()),
   effective_date: optDate, closing_date: optDate,
   earnest_money: optNum, option_fee: optNum,
-  option_period_days: optInt, survey_days: optInt, hoa_info_days: optInt,
+  option_period_days: optInt, survey_days: optInt, hoa_info_days: optInt, fin_approval_days: optInt,
   seller_disclosure: z.preprocess(blank, z.enum(DISCLOSURE_STATUSES).nullable()),
   addenda: z.array(z.enum(ADDENDUM_KEYS as [AddendumKey, ...AddendumKey[]])),
   missing_docs: z.array(z.enum(ADDENDUM_KEYS as [AddendumKey, ...AddendumKey[]])),

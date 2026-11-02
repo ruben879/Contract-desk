@@ -27,20 +27,22 @@ export function dealStatus(input: {
   return { label: "Under contract", tone: "brand", detail: null };
 }
 
-export type TaskGroup = "late" | "upcoming" | "whenever" | "done";
+export type TaskGroup = "late" | "upcoming" | "paper" | "whenever" | "done";
 export const GROUP_LABEL: Record<TaskGroup, string> = {
-  late: "Late", upcoming: "Coming up", whenever: "Whenever", done: "Done",
+  late: "Late", upcoming: "Coming up", paper: "Waiting on paper", whenever: "Whenever", done: "Done",
 };
 
 /**
  * Where a task sits and the one line that says when it's due. Lateness is stated once.
  * unresolved: its date depends on a term the contract leaves blank (it stays flagged, never dated).
  */
-export function taskTiming(status: string, due: ISODate | null | undefined, today: ISODate, unresolved = false): {
+export function taskTiming(status: string, due: ISODate | null | undefined, today: ISODate, unresolved = false, paper = false): {
   group: TaskGroup; when: string | null; tone: "bad" | "warn" | "muted";
 } {
   if (status === "done") return { group: "done", when: null, tone: "muted" };
   if (status === "not_needed") return { group: "done", when: "Not needed", tone: "muted" };
+  // A document the contract refers to but the file doesn't have: resolved by an upload, not a date.
+  if (paper && !due) return { group: "paper", when: null, tone: "muted" };
   if (!due && unresolved) return { group: "whenever", when: "No date: the contract leaves it blank", tone: "warn" };
   if (!due) return { group: "whenever", when: null, tone: "muted" };
   const n = daysBetween(today, due);

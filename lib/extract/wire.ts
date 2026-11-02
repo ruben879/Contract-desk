@@ -42,6 +42,7 @@ const FIELDS: Record<FieldKey, [Json, string]> = {
   earnest_money: [N, "Earnest money amount (Para 5A)"], option_fee: [N, "Option fee (Para 5A/5B)"],
   option_period_days: [I, "Number of days in the option period (Para 5B)"],
   survey_days: [I, "Days to deliver survey/T-47 if stated (Para 6C). Leave out if no Para 6C box is checked or the days are blank."],
+  fin_approval_days: [I, "Third Party Financing Addendum Para 2A (Buyer Approval): number of days after the effective date for the buyer to obtain approval. Leave out if no day count is filled in."],
   hoa_info_days: [I, "HOA addendum Para A: number of days after the effective date by which the subdivision information must be delivered or obtained. Leave out if no day count is filled in."],
   seller_disclosure: [{ type: "string", enum: [...DISCLOSURE_STATUSES] }, "Seller's Disclosure Notice box checked in Para 7B"],
   title_company: [S, "Title company name"], escrow_officer: [S, "Escrow officer name if stated"],
@@ -129,7 +130,7 @@ const addendum = (a: any) => ({ ...a, form_number: str(a?.form_number), doc: pos
 const documents = (ds: any) => (Array.isArray(ds) ? ds.map((d) => ({ ...d, slot: d?.slot === "none" ? null : d?.slot })) : []);
 
 const RANK = { high: 3, medium: 2, low: 1 } as const;
-const NUMERIC = new Set(["sales_price", "financed_amount", "earnest_money", "option_fee", "option_period_days", "survey_days", "hoa_info_days"]);
+const NUMERIC = new Set(["sales_price", "financed_amount", "earnest_money", "option_fee", "option_period_days", "survey_days", "hoa_info_days", "fin_approval_days"]);
 const LISTS = new Set(["buyers", "sellers"]);
 const ENUMS = new Set(["financing_type", "seller_disclosure"]);
 

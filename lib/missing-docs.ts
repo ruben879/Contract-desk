@@ -46,3 +46,21 @@ export function deriveMissingDocs(ex: ReadLike | null): AddendumKey[] {
 /** Missing documents that still need chasing: confirmed missing and not attached since. */
 export const stillMissing = (missing: readonly string[] | null | undefined, addenda: readonly string[]) =>
   (missing ?? []).filter((k) => !addenda.includes(k)) as AddendumKey[];
+
+/** Short names for buttons ("Add the Seller's Disclosure"). */
+const SHORT: Partial<Record<AddendumKey, string>> = {
+  sellers_disclosure: "Seller's Disclosure", lead_based_paint: "Lead-Based Paint Addendum", hoa: "HOA Addendum",
+  third_party_financing: "Financing Addendum", non_realty_items: "Non-Realty Items Addendum",
+  sale_of_other_property: "Sale of Other Property Addendum", seller_financing: "Seller Financing Addendum",
+  loan_assumption: "Loan Assumption Addendum", buyers_temp_lease: "Buyer's Temporary Lease",
+  sellers_temp_lease: "Seller's Temporary Lease", back_up_contract: "Back-Up Contract Addendum",
+};
+export const shortDocName = (k: AddendumKey) => SHORT[k] ?? ADDENDA[k];
+
+/** For a "missing_<key>" task: which document, and the slot it goes in. */
+export function missingTask(ruleKey: string): { key: AddendumKey; slot: string; verb: string } | null {
+  if (!ruleKey.startsWith("missing_")) return null;
+  const key = ruleKey.slice("missing_".length) as AddendumKey;
+  if (!MISSING_DOC_KEYS.includes(key)) return null;
+  return { key, slot: slotForMissing(key), verb: `Add the ${shortDocName(key)}` };
+}

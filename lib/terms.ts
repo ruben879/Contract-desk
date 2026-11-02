@@ -15,6 +15,7 @@ export type Terms = {
   earnest_money: number | null; option_fee: number | null;
   option_period_days: number | null; survey_days: number | null;
   hoa_info_days: number | null;
+  fin_approval_days: number | null;
   seller_disclosure: DisclosureStatus | null;
   addenda: AddendumKey[];
   /** Referenced by the contract but not in the file. null = no list confirmed yet (deals confirmed before Nov 2026). */
@@ -40,6 +41,7 @@ export const TERM_FIELDS: { key: Exclude<keyof Terms, "side" | "addenda" | "miss
   { key: "option_period_days", label: "Option period", kind: "days" },
   { key: "survey_days", label: "Survey", kind: "days" },
   { key: "hoa_info_days", label: "HOA information", kind: "days" },
+  { key: "fin_approval_days", label: "Buyer approval (financing)", kind: "days" },
   { key: "seller_disclosure", label: "Seller's Disclosure", kind: "disclosure" },
 ];
 export const TERM_KIND = Object.fromEntries(TERM_FIELDS.map((f) => [f.key, f.kind])) as Record<string, Kind>;
@@ -54,7 +56,7 @@ export function termsFromTx(tx: Record<string, any>): Terms {
     sales_price: n(tx.sales_price), financed_amount: n(tx.financed_amount), financing_type: tx.financing_type ?? null,
     effective_date: tx.effective_date ?? null, closing_date: tx.closing_date ?? null,
     earnest_money: n(tx.earnest_money), option_fee: n(tx.option_fee),
-    option_period_days: n(tx.option_period_days), survey_days: n(tx.survey_days), hoa_info_days: n(tx.hoa_info_days),
+    option_period_days: n(tx.option_period_days), survey_days: n(tx.survey_days), hoa_info_days: n(tx.hoa_info_days), fin_approval_days: n(tx.fin_approval_days),
     seller_disclosure: tx.seller_disclosure ?? null, addenda: (tx.addenda ?? []) as AddendumKey[],
     missing_docs: (tx.missing_docs ?? null) as AddendumKey[] | null,
   };

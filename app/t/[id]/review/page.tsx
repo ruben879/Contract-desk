@@ -91,6 +91,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     option_period_days: pick("option_period_days", tx.option_period_days),
     survey_days: pick("survey_days", tx.survey_days),
     hoa_info_days: pick("hoa_info_days", tx.hoa_info_days),
+    fin_approval_days: pick("fin_approval_days", tx.fin_approval_days),
     seller_disclosure: pick("seller_disclosure", tx.seller_disclosure) ?? "unknown",
     side, agent_member_id: agentId,
   };

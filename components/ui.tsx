@@ -7,9 +7,9 @@ export { cx };
 type BtnProps = { variant?: "primary" | "quiet" | "danger"; size?: "md" | "lg"; className?: string };
 const btn = ({ variant = "primary", size = "md", className }: BtnProps) =>
   cx(
-    "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed",
-    size === "lg" ? "px-5 py-3.5 text-base w-full" : "px-4 py-2.5 text-sm",
-    variant === "primary" && "bg-brand text-white hover:bg-brand-dark shadow-sm",
+    "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition disabled:opacity-45 disabled:cursor-not-allowed",
+    size === "lg" ? "min-h-[54px] px-5 py-3.5 text-[17px] w-full" : "min-h-11 px-4 py-2.5 text-[15px]",
+    variant === "primary" && "bg-brand text-white hover:bg-brand-dark",
     variant === "quiet" && "bg-transparent text-brand hover:bg-brand-soft",
     variant === "danger" && "bg-bad-soft text-bad hover:bg-bad hover:text-white",
     className,
@@ -23,7 +23,7 @@ export function ButtonLink({ variant, size, className, ...p }: BtnProps & Compon
 }
 
 export function Card({ className, ...p }: ComponentProps<"div">) {
-  return <div className={cx("rounded-2xl border border-line bg-card p-4 sm:p-5", className)} {...p} />;
+  return <div className={cx("rounded-card bg-card p-[18px] shadow-card", className)} {...p} />;
 }
 
 export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "brand" | "warn" | "bad" | "good"; children: ReactNode }) {
@@ -40,14 +40,14 @@ export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "bran
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="mb-2 mt-6 flex items-center justify-between">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{children}</h2>
+      <h2 className="text-[15px] font-semibold text-ink">{children}</h2>
       {action}
     </div>
   );
 }
 
 export const inputCls =
-  "w-full rounded-xl border border-line bg-white px-3 py-2.5 outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft";
+  "w-full rounded-xl border-[1.5px] border-line bg-white px-3 py-2.5 outline-none focus:border-brand-dark";
 
 export const money = (n: number | null | undefined) =>
   n == null ? "" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });

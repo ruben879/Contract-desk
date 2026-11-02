@@ -75,7 +75,7 @@ describe("migration 0005", () => {
     const { db } = await freshDb();
     const { brokerageId } = await seedBrokerage(db);
     const rows = (await db.query<{ key: string; default_days: number | null }>("select key, default_days from deadline_rules where brokerage_id = $1 order by sort", [brokerageId])).rows;
-    expect(rows.map((r) => r.key)).toEqual(["earnest_money", "option_end", "title_commitment", "survey", "closing", "hoa_info"]);
+    expect(rows.map((r) => r.key)).toEqual(["earnest_money", "option_end", "title_commitment", "survey", "closing", "hoa_info", "fin_approval"]);
     expect(rows.find((r) => r.key === "survey")!.default_days).toBeNull();
   });
   it("backfills hoa_info for brokerages that existed before it", async () => {
