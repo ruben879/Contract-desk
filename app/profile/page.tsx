@@ -4,6 +4,7 @@ import { requireMember, memberIntakeAddress } from "@/lib/context";
 import { AppShell } from "@/components/AppShell";
 import { CopyText } from "@/components/CopyText";
 import { Button, Card, SectionTitle, inputCls } from "@/components/ui";
+import { SetPassword } from "@/components/SetPassword";
 
 async function saveProfile(fd: FormData) {
   "use server";
@@ -47,6 +48,12 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
           <Button size="lg">Save profile</Button>
           {saved && <p className="text-sm text-good">Saved.</p>}
         </form>
+      </Card>
+
+      <SectionTitle>Sign-in password (optional)</SectionTitle>
+      <Card>
+        <p className="mb-3 text-sm text-muted">You can always sign in with an emailed code. A password is faster: your phone can save it and fill it in with Face ID.</p>
+        <SetPassword email={member.email} />
       </Card>
 
       <SectionTitle>Your forward-to address</SectionTitle>

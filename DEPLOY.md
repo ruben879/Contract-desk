@@ -67,3 +67,17 @@ Send Claude: a screenshot, the row from Recent forwarded emails, and the Vercel 
 
 - **Email never appears in Recent forwarded emails:** it was rejected before reaching the app. Postmark > Inbound > Activity shows why (413 = too large, 401 = webhook password mismatch).
 - **Stuck on "Reading":** after 10 minutes it flips to "couldn't read" with a Try again button.
+
+## Sign-in emails show a code (one-time, Supabase dashboard)
+The app signs people in with a code typed into the app (or an optional password), because on iPhone a link opens in Safari, not in the home-screen app. Supabase's default emails only contain the link, so add the code:
+
+1. Authentication > Emails > Templates > **Magic Link**. Replace the body with:
+   ```
+   <h2>Your Contract Desk sign-in code</h2>
+   <p style="font-size:28px;letter-spacing:6px"><b>{{ .Token }}</b></p>
+   <p>Type this code in the app. It works for one hour.</p>
+   <p>Or <a href="{{ .ConfirmationURL }}">sign in with this link</a> (only on the same browser you asked from).</p>
+   ```
+   Subject: `Your Contract Desk code: {{ .Token }}`
+2. Do the same for **Confirm signup** (a brand-new email gets this one the first time).
+3. Authentication > Sessions: leave "Time-box user sessions" and "Inactivity timeout" off, and keep the refresh-token reuse interval at its default (10 seconds). That's what keeps people signed in.
