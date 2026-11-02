@@ -6,66 +6,72 @@ import { TaskAction } from "./TaskAction";
 import { cx } from "./ui";
 
 const toneText = { bad: "font-medium text-bad", warn: "font-medium text-warn", muted: "text-muted" } as const;
+const lineTone = (k: RowCard["kind"]) => (k === "late" ? toneText.bad : k === "today" ? toneText.warn : toneText.muted);
+const street = (address: string) => address.split(",")[0];
+const anchor = (dealId: string) => `deal-${dealId}`;
 
 /**
- * Row of deal cards (swipe sideways, tap to select; they never complete anything) and, below it,
- * the selected deal's tasks, one per card, each with its own button. Marking one done slides it
- * away and the next moves up. The stack ends with "Open deal to see more".
+ * Today below the pinned cards: a preview strip (one small preview per stack, same order; tapping
+ * one scrolls to its stack, it never selects or swaps anything), then every deal's stack, one
+ * after another, in attention order. A stack is a header (opens the deal, never completes
+ * anything), up to five task cards with one button each, and "Open deal to see more".
  */
 export function TodayBoard({ row, stacks }: { row: RowCard[]; stacks: Record<string, StackCard[]> }) {
-  const [selected, setSelected] = useState(row[0]?.dealId);
   const [gone, setGone] = useState<Set<string>>(new Set());
-  const deal = row.find((r) => r.dealId === selected) ?? row[0];
-  if (!deal) return null;
-  const stack = stacks[deal.dealId] ?? [];
+  if (!row.length) return null;
 
   return (
     <>
-      <div role="tablist" aria-label="Deals"
-        className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-px-4 px-4 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {row.map((r) => {
-          const on = r.dealId === deal.dealId;
-          return (
-            <div key={r.dealId} role="tab" aria-selected={on} tabIndex={0}
-              onClick={() => setSelected(r.dealId)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(r.dealId); } }}
-              className={cx("w-[78%] max-w-[300px] shrink-0 cursor-pointer snap-start rounded-card bg-card p-4 shadow-card outline-none transition",
-                on ? "ring-2 ring-brand" : "opacity-90 hover:opacity-100")}>
-              <div className="font-semibold leading-snug">{r.address}</div>
-              <div className={cx("mt-0.5 text-[15px]", r.kind === "late" ? toneText.bad : r.kind === "today" ? toneText.warn : toneText.muted)}>{r.line}</div>
-              <Link href={`/t/${r.dealId}`} onClick={(e) => e.stopPropagation()}
-                className="mt-2 inline-block text-[15px] font-medium text-brand underline underline-offset-[3px]">Open deal</Link>
-            </div>
-          );
-        })}
-      </div>
+      <nav aria-label="Jump to a deal"
+        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {row.map((r) => (
+          <a key={r.dealId} href={`#${anchor(r.dealId)}`}
+            onClick={(e) => { e.preventDefault(); document.getElementById(anchor(r.dealId))?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+            className="shrink-0 rounded-full bg-card px-3.5 py-2 shadow-card">
+            <span className={cx("block max-w-[180px] truncate text-[15px] font-medium", r.kind === "late" ? "text-bad" : r.kind === "today" ? "text-warn" : "text-ink")}>{street(r.address)}</span>
+          </a>
+        ))}
+      </nav>
 
-      <ol role="tabpanel" aria-label={`Tasks for ${deal.address}`} className="mt-2">
-        {stack.map((t) => {
-          const hide = gone.has(t.itemId);
-          return (
-            <li key={t.itemId} aria-hidden={hide}
-              className={cx("grid transition-all duration-300 ease-out", hide ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
-              <div className="overflow-hidden">
-                <div className="mb-3 rounded-card bg-card p-[18px] shadow-card">
-                  <div className="text-[18px] font-semibold leading-snug">{t.title}</div>
-                  {t.when && <div className={cx("mt-1", toneText[t.tone])}>{t.when}</div>}
-                  <div className="mt-3.5">
-                    <TaskAction itemId={t.itemId} ruleKey={t.ruleKey} transactionId={deal.dealId}
-                      onDone={() => setGone((g) => new Set(g).add(t.itemId))} />
-                  </div>
-                </div>
-              </div>
-            </li>
-          );
-        })}
-        <li>
-          <Link href={`/t/${deal.dealId}`} className="flex items-center justify-between rounded-card bg-card p-[18px] font-medium text-brand shadow-card">
-            Open deal to see more
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M9 5l7 7-7 7" /></svg>
-          </Link>
-        </li>
-      </ol>
+      <div className="flex flex-col gap-8">
+        {row.map((r) => (
+          <section key={r.dealId} id={anchor(r.dealId)} aria-label={r.address} className="scroll-mt-4">
+            <Link href={`/t/${r.dealId}`} className="mb-3 flex items-center justify-between gap-3 px-1">
+              <span className="min-w-0">
+                <span className="block text-[19px] font-semibold leading-snug">{r.address}</span>
+                <span className={cx("block", lineTone(r.kind))}>{r.line}</span>
+              </span>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-brand" aria-hidden><path d="M9 5l7 7-7 7" /></svg>
+            </Link>
+            <ol>
+              {(stacks[r.dealId] ?? []).map((t) => {
+                const hide = gone.has(t.itemId);
+                return (
+                  <li key={t.itemId} aria-hidden={hide}
+                    className={cx("grid transition-all duration-300 ease-out", hide ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
+                    <div className="overflow-hidden">
+                      <div className="mb-3 rounded-card bg-card p-[18px] shadow-card">
+                        <div className="text-[18px] font-semibold leading-snug">{t.title}</div>
+                        {t.when && <div className={cx("mt-1", toneText[t.tone])}>{t.when}</div>}
+                        <div className="mt-3.5">
+                          <TaskAction itemId={t.itemId} ruleKey={t.ruleKey} transactionId={r.dealId}
+                            onDone={() => setGone((g) => new Set(g).add(t.itemId))} />
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+              <li>
+                <Link href={`/t/${r.dealId}`} className="flex items-center justify-between rounded-card bg-card p-[18px] font-medium text-brand shadow-card">
+                  Open deal to see more
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M9 5l7 7-7 7" /></svg>
+                </Link>
+              </li>
+            </ol>
+          </section>
+        ))}
+      </div>
     </>
   );
 }

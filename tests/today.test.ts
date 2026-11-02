@@ -20,7 +20,16 @@ const soon = deal("o", "12 Oak Ln", [{ key: "closing", label: "Closing", due_dat
 const later = deal("p", "9 Pine Ave", [{ key: "closing", label: "Closing", due_date: "2026-12-20" }], [["closed", "open", "closing"]]);
 const farther = deal("q", "3 Quail Rd", [{ key: "closing", label: "Closing", due_date: "2027-01-15" }], [["closed", "open", "closing"]]);
 
-describe("Today row: deal cards are containers", () => {
+describe("Today: every deal on the page gets a stack, in attention order", () => {
+  it("one stack per previewed deal, same order, no selection", () => {
+    const { row, stacks } = buildToday([later, soon, dueToday, late, farther], today);
+    expect(Object.keys(stacks)).toEqual(row.map((r) => r.dealId));
+    expect(stacks.e.map((t) => t.title)).toEqual(["option_decision"]);
+    expect(stacks.o.map((t) => t.title)).toEqual(["closed"]);
+  });
+});
+
+describe("Today order and headers", () => {
   const { row, caughtUp } = buildToday([later, soon, dueToday, late, farther], today);
   it("deals with something late first (oldest first), then due today, then filled with the soonest coming up", () => {
     expect(row.map((r) => [r.dealId, r.kind, r.line])).toEqual([
@@ -33,7 +42,7 @@ describe("Today row: deal cards are containers", () => {
     const many = Array.from({ length: 5 }, (_, i) => deal(`d${i}`, `${i} Main`, [{ key: "option_end", label: "Option", due_date: "2026-10-2" + i }], [["option_decision", "open", "option_end"]]));
     expect(buildToday([...many, soon], today).row.map((r) => r.dealId)).toEqual(["d0", "d1", "d2", "d3", "d4"]);
   });
-  it("row cards carry no task: nothing on them can be marked done", () => {
+  it("headers and previews carry no task: nothing on them can be marked done", () => {
     for (const r of row) expect(Object.keys(r).sort()).toEqual(["address", "dealId", "key", "kind", "line"]);
   });
   it("nothing late or due: caught up, and the row shows the soonest deals", () => {
@@ -79,10 +88,10 @@ describe("Brookhollow on Today, as in production after migration 0008", () => {
     expect(items).toHaveLength(14);
     expect(items.filter((i) => i.status === "open")).toHaveLength(13);
   });
-  it("one late deal card in the row", () => {
+  it("one late deal, first on the page", () => {
     expect(row).toEqual([{ dealId: "b", address: "4512 Brookhollow Dr, Lubbock", kind: "late", line: "Late since Oct 6", key: "2026-10-06" }]);
   });
-  it("its stack starts with sending the contract to title, one task per card", () => {
+  it("its stack: five task cards starting with sending the contract to title (the page then adds 'Open deal to see more')", () => {
     expect(stacks.b.map((t) => [t.title, t.when])).toEqual([
       ["Send executed contract to title company", "26 days late (due Oct 6)"],
       ["Earnest money and option fee delivered, receipt from title in the file", "26 days late (due Oct 6)"],

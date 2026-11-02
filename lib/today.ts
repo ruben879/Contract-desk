@@ -1,15 +1,16 @@
 import { daysBetween, formatShort, type ISODate } from "@/lib/dates";
 import { taskTiming } from "@/lib/deal-status";
 
-// Today: a swipeable ROW of deal cards, and below it a STACK of task cards for the selected deal.
-// - Row cards are containers. They select a deal and can open it; they never complete anything.
-// - Stack cards hold exactly one task each, with that task's own button.
+// Today: one vertical scroll of STACKS, one per deal, in attention order, with a preview strip on
+// top (one preview per stack, same order; tapping jumps to the stack). No selection state.
+// - A stack's header (address + one line) opens the deal; it never completes anything.
+// - Each task card holds exactly one task, with that task's own button.
 // Order is deadline order only: deals with something late (oldest first, so the oldest late thing
 // stays first until it's handled), then due today; if fewer than ROW_FILL deals are due, the row
 // fills with the deals whose next date comes soonest. Nothing is ranked by engagement.
 // Pure, so tested.
 
-export const ROW_FILL = 3;     // fill the row to this many deals with the soonest coming up
+export const ROW_FILL = 3;     // on a light day, fill Today to this many deals with the soonest coming up
 export const STACK_LIMIT = 5;  // task cards per deal before "Open deal to see more"
 
 export type TodayDeal = {
