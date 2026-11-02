@@ -18,8 +18,9 @@ type Row = {
 const addressOf = (r: Pick<Row, "property_street" | "property_city" | "documents">) =>
   r.property_street ? [r.property_street, r.property_city].filter(Boolean).join(", ") : r.documents[0]?.file_name ?? "New contract";
 
-// Today: a ranked stream that ends. Things to check first (nothing can be tracked until a
-// contract is confirmed), then late, due today, and each other deal's next date.
+// Today: a ranked stream that ends, one card per deal. Things to check first (nothing can be
+// tracked until a contract is confirmed), then deals with something late, due today, and each
+// other deal's next date. The deal page carries the per-task detail.
 export default async function Today() {
   const { supabase, member, brokerage, isBrokerOrStaff } = await requireMember();
   await expireStaleReads(brokerage.id);
@@ -77,7 +78,7 @@ export default async function Today() {
           {cards.map((c) => c.kind === "next" ? (
             <StreamCardView key={`n-${c.dealId}`} href={`/t/${c.dealId}`} eyebrow={c.address} title={c.title} when={c.when} tone="muted" />
           ) : (
-            <StreamCardView key={c.itemId} href={`/t/${c.dealId}`} eyebrow={c.address} title={c.title} when={c.when}
+            <StreamCardView key={c.dealId} href={`/t/${c.dealId}`} eyebrow={c.address} title={c.title} when={c.when} more={c.more}
               tone={c.kind === "late" ? "bad" : "warn"}
               action={<TaskAction itemId={c.itemId} ruleKey={c.ruleKey} transactionId={c.dealId} />} />
           ))}
