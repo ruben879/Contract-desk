@@ -8,6 +8,16 @@ import { APP_NAME } from "@/lib/brand";
 // (Links open in Safari, not in the home-screen app, so they sign in the wrong place on iPhone.)
 
 type Step = "email" | "code" | "password";
+
+// Supabase limits sign-in emails: a short wait per person, and a few per hour for the whole app
+// on its built-in sender. Say which one it is, and point to the email that already arrived.
+function sendError(error: { status?: number; code?: string; message: string }) {
+  const wait = error.message.match(/after (\d+) seconds?/i)?.[1];
+  if (wait) return `Please wait ${wait} seconds before asking for another code. Your last email still works for an hour.`;
+  if (error.status === 429 || /rate limit/i.test(error.message) || error.code?.startsWith("over_"))
+    return "Too many sign-in emails were sent recently, so new ones are paused for up to an hour. The last email you got still works: use its code, or sign in with your password.";
+  return "That didn't send. Check the email and try again.";
+}
 const EMAIL_KEY = "cd:last-email";
 
 export default function Login() {
@@ -37,7 +47,7 @@ export default function Login() {
       email: email.trim(), options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
     setBusy(false);
-    if (error) setError(error.status === 429 ? "Too many tries. Wait a minute, then send a new code." : "That didn't send. Check the email and try again.");
+    if (error) setError(sendError(error));
     else { remember(); setCode(""); setStep("code"); }
   }
 

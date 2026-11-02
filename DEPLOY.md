@@ -81,3 +81,11 @@ The app signs people in with a code typed into the app (or an optional password)
    Subject: `Your Contract Desk code: {{ .Token }}`
 2. Do the same for **Confirm signup** (a brand-new email gets this one the first time).
 3. Authentication > Sessions: leave "Time-box user sessions" and "Inactivity timeout" off, and keep the refresh-token reuse interval at its default (10 seconds). That's what keeps people signed in.
+
+## Send sign-in emails through Postmark (removes the "too many emails" wait)
+Supabase's built-in sender allows only a few emails per hour for the whole app, so a couple of retries locks everyone out for up to an hour. Point it at Postmark (already in use for inbound):
+
+1. Postmark: in the server, create or use the default **Outbound** (transactional) stream and verify a sender address or domain (e.g. `noreply@clearrockrealty.com`; DNS is in Cloudflare).
+2. Copy the server's API token (it's used as both the SMTP username and password).
+3. Supabase: Authentication > Emails > SMTP Settings. Turn on custom SMTP. Host `smtp.postmarkapp.com`, port `587`, username and password = the token, sender = the verified address, sender name `Contract Desk`.
+4. Supabase: Authentication > Rate Limits. Set emails per hour to something comfortable, e.g. 100.
