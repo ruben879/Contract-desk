@@ -33,3 +33,11 @@ body { background: var(--color-paper); color: var(--color-ink); font-size: 16px;
 input, select, textarea { font-size: 16px; } /* no iOS zoom on focus */
 :focus-visible { outline: 3px solid var(--color-brand-dark); outline-offset: 2px; border-radius: 6px; }
 details > summary::-webkit-details-marker { display: none; }
+
+/* Today's task deck: mirrors Rock Solid's pile (src/styles.css ".pile", ".pback", ".pcard"),
+   with gray edges in place of gold. */
+.pback { box-shadow: 0 -1px 0 var(--color-line), 0 6px 18px rgba(20, 32, 58, .08); transition: all .25s ease; }
+.pcard { box-shadow: 0 -1px 0 var(--color-line), 0 12px 30px rgba(20, 32, 58, .14); }
+@keyframes pcIn { from { opacity: 0; transform: translateX(40px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes pcInBack { from { opacity: 0; transform: translateX(-40px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pcard { animation: none !important; } }
