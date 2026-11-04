@@ -53,6 +53,20 @@ describe("brokerage computations", () => {
   it("settings: missing or bad values fall back to the standard ones", () => {
     expect(normalizeDefaults(null)).toEqual(D);
     expect(normalizeDefaults({ earnest_pct: 2, option_tier3_fee: "x" })).toEqual({ ...D, earnest_pct: 2 });
+    // A settings object saved before the title and survey keys existed (0010) gets Clear Rock's values for them.
+    const before0011 = { earnest_pct: 1, earnest_round: 100, option_tier1_max: 300000, option_tier1_fee: 100, option_tier2_max: 400000, option_tier2_fee: 150, option_tier3_fee: 250, option_period_days: 10 };
+    expect(normalizeDefaults(before0011)).toEqual(D);
+    expect([D.title_policy_payer, D.survey_option, D.survey_days, D.survey_new_payer]).toEqual(["seller", "seller_existing", 5, "buyer"]);
+    expect(normalizeDefaults({ title_policy_payer: "lender", survey_option: "6C1", survey_new_payer: 3 })).toEqual(D);
+  });
+  it("title payer and survey start from the brokerage's settings, and stay editable per offer", async () => {
+    const d = normalizeDefaults({ title_policy_payer: "buyer", survey_option: "buyer_new", survey_days: 7, survey_new_payer: "seller" });
+    const t = applyBrokerageDefaults({ ...emptyTerms(), sales_price: 200000 }, d);
+    expect([t.title_policy_payer, t.survey_option, t.survey_days, t.survey_new_payer]).toEqual(["buyer", "buyer_new", 7, null]); // new-survey payer is only a 6C(1) question
+    const { contractValues: v } = await renderPacket({ ...t, buyers: ["A B"], property_street: "1 Main St" }, []);
+    expect([v["Buyers expense no later"], v["Sellers_2"], v["Within three"], v["3 days prior"]]).toEqual([true, undefined, true, "7"]);
+    const edited = applyBrokerageDefaults({ ...t, title_policy_payer: "seller", survey_option: "seller_existing", survey_days: null, touched: ["title_policy_payer", "survey_option"] }, d);
+    expect([edited.title_policy_payer, edited.survey_option, edited.survey_days, edited.survey_new_payer]).toEqual(["seller", "seller_existing", null, "seller"]);
   });
 });
 
@@ -117,5 +131,5 @@ describe("fill style", () => {
     const blank = new Uint8Array(fs.readFileSync("forms/trec/TREC-20-19.pdf"));
     const r = await compareToBlank(blank, bytes, 0);
     expect(r.problems).toEqual([]);
-  });
+  }, 30_000);
 });

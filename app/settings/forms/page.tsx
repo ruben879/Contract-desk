@@ -25,7 +25,8 @@ async function saveDefaults(fd: FormData) {
   }).eq("id", brokerage.id);
   // Computations live in their own column (migration 0010); saved separately so the fields above
   // still save if that migration hasn't run yet.
-  const n = (k: keyof OfferDefaults) => { const v = s(k); return v == null ? null : Number(v.replace(/[$,%\s]/g, "")); };
+  const TEXT_KEYS = new Set<keyof OfferDefaults>(["title_policy_payer", "survey_option", "survey_new_payer"]);
+  const n = (k: keyof OfferDefaults) => { const v = s(k); return v == null ? null : TEXT_KEYS.has(k) ? v : Number(v.replace(/[$,%\s]/g, "")); };
   const next = normalizeDefaults(Object.fromEntries((Object.keys(STANDARD_OFFER_DEFAULTS) as (keyof OfferDefaults)[]).map((k) => [k, n(k)])));
   if (next.option_tier2_max < next.option_tier1_max) next.option_tier2_max = next.option_tier1_max;
   await supabase.from("brokerages").update({ offer_defaults: next }).eq("id", brokerage.id);
@@ -79,7 +80,25 @@ export default async function FormsSettings() {
             <div className="self-end pb-3 text-[15px] text-muted">Above that</div>{numIn("option_tier3_fee", "Fee", "$")}
           </div>
           {numIn("option_period_days", "Option period (days)")}
-          <p className="text-[13.5px] text-muted">New offers fill these in from the price and keep them in step as the price changes, until the agent types their own. Every offer also starts with the owner's title policy at Seller's expense and the Seller's existing survey within 5 days (Buyer pays for a new one if it isn't accepted). All of it stays editable on each offer.</p>
+          <h3 className="pt-2 font-semibold">Title policy and survey</h3>
+          <label className="block"><span className="mb-1 block text-[14px] font-medium">Owner's title policy paid by (Para 6A)</span>
+            <select name="title_policy_payer" defaultValue={c.title_policy_payer} className={inputCls}>
+              <option value="seller">Seller</option><option value="buyer">Buyer</option>
+            </select></label>
+          <label className="block"><span className="mb-1 block text-[14px] font-medium">Survey (Para 6C)</span>
+            <select name="survey_option" defaultValue={c.survey_option} className={inputCls}>
+              <option value="seller_existing">6C(1): Seller furnishes the existing survey</option>
+              <option value="buyer_new">6C(2): Buyer obtains a new survey</option>
+              <option value="seller_new">6C(3): Seller furnishes a new survey</option>
+            </select></label>
+          <div className="grid grid-cols-2 gap-3">
+            {numIn("survey_days", "Survey within (days)")}
+            <label className="block"><span className="mb-1 block text-[14px] font-medium">6C(1): a new survey, if not accepted, paid by</span>
+              <select name="survey_new_payer" defaultValue={c.survey_new_payer} className={inputCls}>
+                <option value="buyer">Buyer</option><option value="seller">Seller</option>
+              </select></label>
+          </div>
+          <p className="text-[13.5px] text-muted">New offers start with these. Earnest money and option fee keep in step with the price until the agent types their own. Every value stays editable on each offer.</p>
           <button className="inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-[15px] font-medium text-white">Save defaults</button>
         </form>
       </Card>

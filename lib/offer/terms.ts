@@ -260,26 +260,34 @@ export type OfferDefaults = {
   option_tier2_max: number; option_tier2_fee: number;   // above tier1_max, up to and including tier2_max
   option_tier3_fee: number;                             // above tier2_max
   option_period_days: number;
+  title_policy_payer: "seller" | "buyer";             // Para 6A
+  survey_option: SurveyOption;                        // Para 6C
+  survey_days: number;
+  survey_new_payer: "seller" | "buyer";               // Para 6C(1): if the existing survey isn't accepted
 };
 /** Clear Rock's values; also what a brokerage gets until it changes them. */
 export const STANDARD_OFFER_DEFAULTS: OfferDefaults = {
   earnest_pct: 1, earnest_round: 100,
   option_tier1_max: 300000, option_tier1_fee: 100, option_tier2_max: 400000, option_tier2_fee: 150, option_tier3_fee: 250,
   option_period_days: 10,
+  title_policy_payer: "seller", survey_option: "seller_existing", survey_days: 5, survey_new_payer: "buyer",
 };
-/** Fixed starting choices (not brokerage settings in this round). */
-export const STANDARD_CHOICES = { title_policy_payer: "seller", survey_option: "seller_existing", survey_days: 5, survey_new_payer: "buyer" } as const;
+const CHOICES: Partial<Record<keyof OfferDefaults, readonly string[]>> = {
+  title_policy_payer: ["seller", "buyer"], survey_option: ["seller_existing", "buyer_new", "seller_new"], survey_new_payer: ["seller", "buyer"],
+};
 
 const COMPUTED_KEYS = ["earnest_money", "option_fee", "option_period_days", "title_company", "title_policy_payer", "survey_option", "survey_days", "survey_new_payer"] as const;
 
 export function normalizeDefaults(raw: unknown): OfferDefaults {
   const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const out = { ...STANDARD_OFFER_DEFAULTS };
+  const out: Record<string, unknown> = { ...STANDARD_OFFER_DEFAULTS };
   for (const k of Object.keys(out) as (keyof OfferDefaults)[]) {
+    const allowed = CHOICES[k];
+    if (allowed) { if (allowed.includes(String(src[k]))) out[k] = src[k]; continue; }
     const v = Number(src[k]);
     if (src[k] != null && src[k] !== "" && Number.isFinite(v) && v >= 0) out[k] = v;
   }
-  return out;
+  return out as OfferDefaults;
 }
 
 /** 1% of $135,000 is $1,350, rounded down to the $100 step: $1,300. */
@@ -302,9 +310,10 @@ export function applyBrokerageDefaults(t: OfferTerms, d: OfferDefaults, brokerag
   if (free("option_fee")) out.option_fee = t.sales_price == null ? null : computedOptionFee(t.sales_price, d);
   if (free("option_period_days") && out.option_period_days == null) out.option_period_days = d.option_period_days;
   if (free("title_company") && !out.title_company && brokerageTitleCompany) out.title_company = brokerageTitleCompany;
-  if (free("title_policy_payer") && out.title_policy_payer == null) out.title_policy_payer = STANDARD_CHOICES.title_policy_payer;
-  if (free("survey_option") && out.survey_option == null) out.survey_option = STANDARD_CHOICES.survey_option;
-  if (free("survey_days") && out.survey_days == null && out.survey_option === STANDARD_CHOICES.survey_option) out.survey_days = STANDARD_CHOICES.survey_days;
-  if (free("survey_new_payer") && out.survey_new_payer == null && out.survey_option === "seller_existing") out.survey_new_payer = STANDARD_CHOICES.survey_new_payer;
+  if (free("title_policy_payer") && out.title_policy_payer == null) out.title_policy_payer = d.title_policy_payer;
+  if (free("survey_option") && out.survey_option == null) out.survey_option = d.survey_option;
+  // The day count belongs to the brokerage's usual survey choice; another choice starts with its days blank.
+  if (free("survey_days") && out.survey_days == null && out.survey_option === d.survey_option) out.survey_days = d.survey_days;
+  if (free("survey_new_payer") && out.survey_new_payer == null && out.survey_option === "seller_existing") out.survey_new_payer = d.survey_new_payer;
   return out;
 }
