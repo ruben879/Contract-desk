@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { decodePDFRawStream, PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
+import { decodePDFRawStream, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 import {
   STANDARD_OFFER_DEFAULTS as D, applyBrokerageDefaults, computedEarnest, computedOptionFee, emptyTerms, enforceRules, normalizeDefaults, normalizeTerms, type OfferTerms,
 } from "@/lib/offer/terms";
@@ -108,23 +108,56 @@ async function uploaded(): Promise<UploadedFormForRender> {
   return { formId: "f1", versionId: "v1", displayName: "Library form", p22Slot: null, bytes, fieldMap, fieldTypes: Object.fromEntries(fields.map((f) => [f.name, f.type])) };
 }
 
+/** Page content of every page, decoded, joined. */
+function pageContent(pdf: PDFDocument) {
+  return pdf.getPages().map((p) => {
+    const c = p.node.Contents();
+    const parts = c instanceof PDFArray ? c.asArray().map((r) => pdf.context.lookup(r)) : [c];
+    return parts.map((st) => new TextDecoder("latin1").decode(decodePDFRawStream(st as PDFRawStream).decode())).join("\n");
+  }).join("\n");
+}
+/** Each q...Q block that draws a field appearance: [xobject name, the operators before it]. */
+function draws(content: string) {
+  return [...content.matchAll(/q\s+((?:(?!\bQ\b)[\s\S])*?)\/(Flat(?:Mark|Field)[-\w]*)\s+Do\s+Q/g)].map((m) => ({ kind: m[2].startsWith("FlatMark") ? "mark" : "field", ops: m[1] }));
+}
+const BLUE_FILL = /0 0\.2 0\.8 rg/;
+
 describe("fill style", () => {
-  it("every entered value is Helvetica Bold Oblique in #0033CC, on bundled and library forms; checkbox marks are not", async () => {
-    const { bytes } = await renderPacket(brookhollowTerms(), [await uploaded()]);
-    const drawn = drawnAppearances(await PDFDocument.load(bytes));
-    const text = drawn.filter((d) => !d.fonts.some((f) => /ZapfDingbats/.test(f)));
-    const marks = drawn.filter((d) => d.fonts.some((f) => /ZapfDingbats/.test(f)));
+  it("entered values are Helvetica Bold Oblique in #0033CC, and so are the check marks the renderer draws", async () => {
+    const { bytes, contractValues } = await renderPacket(brookhollowTerms(), [await uploaded()]);
+    const pdf = await PDFDocument.load(bytes);
+    const text = drawnAppearances(pdf).filter((d) => !d.fonts.some((f) => /ZapfDingbats/.test(f)));
     expect(text.length).toBeGreaterThan(20);
     for (const d of text) {
       expect(d.fonts).toEqual(["/Helvetica-BoldOblique"]);
-      expect(d.content).toMatch(/0 0\.2 0\.8 rg/);
+      expect(d.content).toMatch(BLUE_FILL);
     }
     // The library form's value is among them: the same offer without it draws exactly one text value fewer.
     const without = drawnAppearances(await PDFDocument.load((await renderPacket(brookhollowTerms(), [])).bytes))
       .filter((d) => !d.fonts.some((f) => /ZapfDingbats/.test(f)));
     expect(text.length).toBe(without.length + 1);
-    expect(marks.length).toBeGreaterThan(0);
-    for (const d of marks) expect(d.content).not.toMatch(/0 0\.2 0\.8 rg/);
+
+    const all = draws(pageContent(pdf));
+    const marks = all.filter((d) => d.kind === "mark");
+    const checkedOnContract = Object.values(contractValues).filter((v) => v === true).length;
+    expect(marks.length).toBeGreaterThanOrEqual(checkedOnContract); // every box the renderer checked (contract + addenda)
+    for (const m of marks) expect(m.ops).toMatch(BLUE_FILL);
+  });
+  it("a box the form itself came checked with is left exactly as the form draws it", async () => {
+    const u = await uploaded();
+    const pre = await PDFDocument.load(u.bytes);
+    const box = pre.getForm().getFields().find((f) => f instanceof PDFCheckBox) as PDFCheckBox;
+    const mapped = { ...u.fieldMap, [box.getName()]: { term: "sales_price" } }; // the renderer would check it too
+    box.check();
+    const prechecked = await pre.save();
+    const count = async (bytes: Uint8Array) => {
+      const d = draws(pageContent(await PDFDocument.load((await renderPacket(brookhollowTerms(), [{ ...u, bytes, fieldMap: mapped }])).bytes)));
+      return { marks: d.filter((x) => x.kind === "mark").length, plain: d.filter((x) => x.kind === "field").length };
+    };
+    const blank = await count(u.bytes);
+    const came = await count(prechecked);
+    expect(came.marks).toBe(blank.marks - 1);  // the renderer didn't ink it...
+    expect(came.plain).toBe(blank.plain + 1);  // ...it was drawn as the form had it, without the blue
   });
   it("the form itself is unchanged: printed text and positions match the blank 20-19", async () => {
     const { bytes } = await renderPacket(gurrola(), []);

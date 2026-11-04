@@ -42,7 +42,7 @@ Rules:
 
 ${LOCATION_RULES}`;
 
-function docBlocks(pdfs: PdfInput[]): Anthropic.ContentBlockParam[] {
+export function docBlocks(pdfs: PdfInput[]): Anthropic.ContentBlockParam[] {
   const out: Anthropic.ContentBlockParam[] = [];
   pdfs.forEach((p, i) => {
     out.push({ type: "text", text: `Document ${i + 1} of ${pdfs.length}: ${p.name}${p.isScanned ? " (scanned, no text layer)" : ""}` });
@@ -77,7 +77,7 @@ export function jsonFromText(text: string): unknown {
  * runs again without a grammar: the schema goes in the instructions and the same converter and
  * validation check the answer. Streams; retries with more room if cut off, and once if unusable.
  */
-async function callStructured<T>(
+export async function callStructured<T>(
   system: string, content: Anthropic.ContentBlockParam[],
   format: { type: "json_schema"; schema: Record<string, unknown> },
   fromWire: (raw: any) => unknown, parse: (x: unknown) => T,

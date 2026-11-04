@@ -7,6 +7,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { loadOffer, startingTerms, uploadedForRender, withBrokerageDefaults } from "@/lib/offer/server";
 import { enforceRules, exportBlockers, normalizeTerms, packetFileName, type OfferTerms } from "@/lib/offer/terms";
 import { renderPacket } from "@/lib/offer/render";
+import { applyRenImport, ImportRefused, parseRenImport } from "@/lib/offer/ren-import";
+import { draftToFill, saveFilledTerms } from "@/lib/offer/fill";
 
 /** "New offer" from Deals (blank) or from a contact (that contact as the buyer). */
 export async function createOffer(fd: FormData) {
@@ -109,4 +111,31 @@ export async function packetLink(packetId: string): Promise<{ url: string } | { 
   if (!p) return { error: "Packet not found." };
   const { data } = await supabase.storage.from("offer-packets").createSignedUrl(p.storage_path, 600, { download: p.file_name });
   return data ? { url: data.signedUrl } : { error: "Couldn't open the packet." };
+}
+
+
+// ---------- Filling an offer from a Ren terms file or a document ----------
+
+/** Import a Ren terms file (docs/REN_IMPORT_FORMAT.md). Blanks only; nothing is exported. */
+export async function importRenFile(offerId: string | null, fileText: string, fileName: string): Promise<{ id: string } | { error: string }> {
+  let raw: unknown;
+  try { raw = JSON.parse(fileText); } catch { return { error: "That file isn't readable JSON. It should be the terms file Ren prepares." }; }
+  try {
+    const parsed = parseRenImport(raw);
+    const { supabase, id, terms, brokerageId } = await draftToFill(offerId);
+    await saveFilledTerms(supabase, id, brokerageId, applyRenImport(terms, parsed, fileName.slice(0, 200)));
+    revalidatePath(`/o/${id}`);
+    return { id };
+  } catch (e) {
+    return { error: e instanceof ImportRefused ? e.message : "Couldn't import that file. Try again." };
+  }
+}
+
+/** Step 1 of "Fill from a document": a one-time place for the PDF in this brokerage's folder. */
+export async function startDocumentFill(): Promise<{ path: string; token: string }> {
+  const { brokerage } = await requireMember();
+  const path = `${brokerage.id}/offer-sources/${crypto.randomUUID()}.pdf`;
+  const { data, error } = await supabaseAdmin().storage.from("documents").createSignedUploadUrl(path);
+  if (error || !data) throw new Error("Couldn't start the upload.");
+  return { path, token: data.token };
 }

@@ -8,6 +8,8 @@ import { loadLibrary, loadOffer, loadOfferDefaults } from "@/lib/offer/server";
 import { miniFieldTerms, usableForms } from "@/lib/forms/library";
 import { OFFER_STATUS_LABEL as STATUS_LABEL, addressLine } from "@/lib/offer/terms";
 import { PacketDownload } from "@/components/OfferPackets";
+import { OfferFill } from "@/components/OfferFill";
+import { FillNote } from "@/components/FillNote";
 
 
 export default async function OfferTermsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -44,7 +46,9 @@ export default async function OfferTermsPage({ params }: { params: Promise<{ id:
           </ul>
         </section>
       )}
-      <OfferTermsEditor id={id} initial={offer.terms} titleCompanies={titleCompanies}
+      {offer.status === "draft_offer" && <div className="mb-3"><OfferFill offerId={id} compact /></div>}
+      {offer.terms.imported && <FillNote note={offer.terms.imported} />}
+      <OfferTermsEditor key={offer.terms.imported?.at ?? "typed"} id={id} initial={offer.terms} titleCompanies={titleCompanies}
         forms={forms.map((f) => ({ id: f.id, name: f.display_name, formClass: f.form_class }))} miniTerms={miniTerms}
         locked={offer.status === "executed"} defaults={defaults.computations} defaultTitleCompany={defaults.titleCompany} />
     </AppShell>

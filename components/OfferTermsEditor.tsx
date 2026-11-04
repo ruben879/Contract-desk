@@ -162,7 +162,9 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
 
       <Group title="Addenda">
         <Check label="Third Party Financing Addendum" on={loan} disabled hint={loan ? "Included with any loan." : "Comes in when you pick a loan type."} onChange={() => {}} />
-        <Check label="HOA Addendum" on={has("hoa")} onChange={(v) => toggle("hoa", v)} disabled={locked} />
+        <Check label="HOA Addendum" on={has("hoa")} onChange={(v) => toggle("hoa", v)} disabled={locked}
+          hint={t.imported?.suggestions.includes("hoa") && !has("hoa") ? `Suggested: ${t.imported.file_name ?? "the document"} shows a mandatory owners association.` : undefined}
+          tone={t.imported?.suggestions.includes("hoa") && !has("hoa") ? "warn" : undefined} />
         {has("hoa") && (
           <Inset>
             <Text label="Association name and phone" value={t.hoa_association} onChange={(v) => update({ hoa_association: v })} />
@@ -220,6 +222,10 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
           <Text label="Buyer email" value={t.buyer_notice_email} onChange={(v) => update({ buyer_notice_email: v })} inputMode="email" />
         </Row>
         <Text label="Listing broker firm" value={t.listing_broker_firm} onChange={(v) => update({ listing_broker_firm: v })} />
+        <Row>
+          <Text label="Firm license no." value={t.listing_broker_license} onChange={(v) => update({ listing_broker_license: v })} />
+          <Text label="Firm address" value={t.listing_broker_address} onChange={(v) => update({ listing_broker_address: v })} />
+        </Row>
         <Row>
           <Text label="Listing agent" value={t.listing_agent_name} onChange={(v) => update({ listing_agent_name: v })} />
           <Text label="License no." value={t.listing_agent_license} onChange={(v) => update({ listing_agent_license: v })} />

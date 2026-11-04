@@ -7,6 +7,7 @@ import { cx } from "@/components/ui";
 import { startUpload } from "@/app/actions";
 import { daysBetween, formatShort, todayIn } from "@/lib/dates";
 import { createOffer } from "@/app/o/actions";
+import { OfferFill } from "@/components/OfferFill";
 import { OFFER_STATUS_LABEL } from "@/lib/offer/terms";
 import { money } from "@/components/ui";
 
@@ -60,6 +61,7 @@ export default async function Deals() {
       <form action={createOffer} className="mt-3">
         <button className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border-[1.5px] border-line bg-card px-4 text-[15px] font-medium text-brand">Write an offer</button>
       </form>
+      <div className="mt-2"><OfferFill offerId={null} /></div>
 
       {!!offers?.length && (
         <>

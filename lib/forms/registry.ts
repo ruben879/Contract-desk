@@ -141,6 +141,8 @@ const MAP_20_19: MapEntry[] = [
   { field: "Check Box9", term: "addenda: hoa", label: "Para 22: HOA addendum", value: (t) => t.addenda.includes("hoa") },
   // Broker contact information: firm representing Seller (listing side)
   { field: "Other Broker Firm", term: "listing_broker_firm", label: "Broker info: Listing broker firm", value: (t) => t.listing_broker_firm, usual: always },
+  // The listing firm's "Address:" line (page 11, y 625) is the field named "License No".
+  { field: "License No", term: "listing_broker_address", label: "Broker info: Listing broker address", value: (t) => t.listing_broker_address },
   { field: "Listing Broker Firm", term: "listing_broker_license", label: "Broker info: Listing firm license", value: (t) => t.listing_broker_license },
   { field: "License No_4", term: "listing_agent_name", label: "Broker info: Listing associate", value: (t) => t.listing_agent_name, usual: always },
   { field: "License No_2", term: "listing_agent_email", label: "Broker info: Listing associate email", value: (t) => t.listing_agent_email },

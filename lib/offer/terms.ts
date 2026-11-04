@@ -57,7 +57,7 @@ export type OfferTerms = {
   uploaded_forms: string[];           // Form Library form ids picked for this offer, in pick order
   // Notices & compensation (Para 21, Para 12B, broker information)
   buyer_notice_address: string | null; buyer_notice_phone: string | null; buyer_notice_email: string | null;
-  listing_broker_firm: string | null; listing_broker_license: string | null;
+  listing_broker_firm: string | null; listing_broker_license: string | null; listing_broker_address: string | null;
   listing_agent_name: string | null; listing_agent_license: string | null; listing_agent_email: string | null; listing_agent_phone: string | null;
   buyer_broker_firm: string | null; buyer_broker_license: string | null; buyer_broker_address: string | null;
   buyer_agent_name: string | null; buyer_agent_license: string | null; buyer_agent_email: string | null; buyer_agent_phone: string | null;
@@ -70,6 +70,18 @@ export type OfferTerms = {
   intentional_blanks: string[];
   /** Term keys the agent has edited by hand. Brokerage computations never overwrite these. */
   touched: string[];
+  /** The last Ren import into this offer (docs/REN_IMPORT_FORMAT.md), for the "Terms imported" line. */
+  imported: ImportNote | null;
+};
+export type ImportNote = {
+  /** "ren": a Ren terms file. "document": read from an uploaded document (facts only). */
+  kind: "ren" | "document";
+  at: string; file_name: string | null; prepared: string | null; mls_number: string | null;
+  filled: string[]; kept: string[]; unknown: string[]; unused: string[]; problems: string[];
+  /** Document fill: what the reader couldn't find or wasn't sure of (left blank). */
+  could_not_read: string[];
+  /** Addenda the source suggests; never checked on their own. */
+  suggestions: OfferAddendum[];
 };
 
 export function emptyTerms(): OfferTerms {
@@ -83,12 +95,12 @@ export function emptyTerms(): OfferTerms {
     addenda: [], hoa_association: null, hoa_info_days: null, hoa_fee_cap: null,
     appraisal_option: null, appraisal_value: null, appraisal_days: null, uploaded_forms: [],
     buyer_notice_address: null, buyer_notice_phone: null, buyer_notice_email: null,
-    listing_broker_firm: null, listing_broker_license: null, listing_agent_name: null, listing_agent_license: null, listing_agent_email: null, listing_agent_phone: null,
+    listing_broker_firm: null, listing_broker_license: null, listing_broker_address: null, listing_agent_name: null, listing_agent_license: null, listing_agent_email: null, listing_agent_phone: null,
     buyer_broker_firm: null, buyer_broker_license: null, buyer_broker_address: null,
     buyer_agent_name: null, buyer_agent_license: null, buyer_agent_email: null, buyer_agent_phone: null,
     buyer_supervisor_name: null, buyer_supervisor_license: null,
     buyer_broker_comp_type: null, buyer_broker_comp_value: null,
-    extra: {}, intentional_blanks: [], touched: [],
+    extra: {}, intentional_blanks: [], touched: [], imported: null,
   };
 }
 

@@ -1,6 +1,7 @@
 import {
   concatTransformationMatrix, drawObject, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRadioGroup, PDFRef,
-  PDFHexString, PDFStream, PDFString, PDFTextField, popGraphicsState, pushGraphicsState, StandardFonts,
+  decodePDFRawStream, PDFHexString, PDFRawStream, PDFStream, PDFString, PDFTextField, popGraphicsState, pushGraphicsState,
+  setFillingRgbColor, setStrokingRgbColor, StandardFonts,
 } from "pdf-lib";
 
 // Low-level form handling. Render writes values into a form's existing blank (AcroForm) fields
@@ -99,6 +100,7 @@ export async function fillForm(pdf: PDFDocument, values: FieldValues) {
   const font = await pdf.embedFont(FILL_FONT);
   const formDA = form.acroForm.dict.lookupMaybe(PDFName.of("DA"), PDFString, PDFHexString)?.decodeText();
   const written: string[] = [];
+  const inked = new Set<PDFDict>(); // boxes this render checked (not ones the form came checked with)
   for (const [name, v] of Object.entries(values)) {
     if (v === "" || v === false || v == null) continue;
     const f = form.getFieldMaybe(name);
@@ -112,14 +114,17 @@ export async function fillForm(pdf: PDFDocument, values: FieldValues) {
       f.acroField.setDefaultAppearance(blueAppearance(fieldDA));
       for (const w of f.acroField.getWidgets()) w.setDefaultAppearance(blueAppearance(w.getDefaultAppearance() ?? fieldDA));
     } else if (f instanceof PDFCheckBox) {
-      if (v === true) f.check();
+      if (v !== true) continue;
+      f.check();
+      inked.add(f.acroField.dict);
     } else if (f instanceof PDFRadioGroup) {
       f.select(String(v));
+      inked.add(f.acroField.dict);
     } else continue;
     written.push(name);
   }
   form.updateFieldAppearances(font);
-  flattenFields(pdf);
+  flattenFields(pdf, inked);
   return written;
 }
 
@@ -128,8 +133,9 @@ export async function fillForm(pdf: PDFDocument, values: FieldValues) {
  * (pdf-lib's own flatten mishandles checkboxes: it points at the on/off appearance dictionary
  * instead of the appearance for the box's state, so checked boxes vanish and strict readers
  * report "XObject is wrong type".) Unchecked boxes and empty text draw nothing.
+ * Boxes in `inked` (the ones this render checked) draw their own mark in the fill color, #0033CC.
  */
-export function flattenFields(pdf: PDFDocument) {
+export function flattenFields(pdf: PDFDocument, inked: Set<PDFDict> = new Set()) {
   const ctx = pdf.context;
   for (const page of pdf.getPages()) {
     const annots = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
@@ -162,11 +168,33 @@ export function flattenFields(pdf: PDFDocument) {
       const [bx1, by1, bx2, by2] = bbox;
       const sx = bx2 - bx1 ? (rx2 - rx1) / (bx2 - bx1) : 1;
       const sy = by2 - by1 ? (ry2 - ry1) / (by2 - by1) : 1;
-      const name = page.node.newXObject("FlatField", normalRef);
-      page.pushOperators(pushGraphicsState(), concatTransformationMatrix(sx, 0, 0, sy, rx1 - bx1 * sx, ry1 - by1 * sy), drawObject(name), popGraphicsState());
+      const mark = ft === "/Btn" && inked.has(fieldDict);
+      const name = page.node.newXObject(mark ? "FlatMark" : "FlatField", mark ? blueMark(pdf, stream, normalRef) : normalRef);
+      page.pushOperators(
+        pushGraphicsState(),
+        ...(mark ? [setFillingRgbColor(...FILL_RGB), setStrokingRgbColor(...FILL_RGB)] : []),
+        concatTransformationMatrix(sx, 0, 0, sy, rx1 - bx1 * sx, ry1 - by1 * sy), drawObject(name), popGraphicsState(),
+      );
     }
     if (keep.length) page.node.set(PDFName.of("Annots"), ctx.obj(keep)); else page.node.delete(PDFName.of("Annots"));
   }
   const acro = pdf.catalog.lookupMaybe(PDFName.of("AcroForm"), PDFDict);
   if (acro) pdf.catalog.delete(PDFName.of("AcroForm"));
+}
+
+/**
+ * A checked box's mark normally has no color of its own and takes the blue set just before it is
+ * drawn. If a form's mark sets its own color, draw a copy with that color made blue instead
+ * (the form's own appearance object is left as it was).
+ */
+function blueMark(pdf: PDFDocument, stream: PDFStream, ref: PDFRef): PDFRef {
+  if (!(stream instanceof PDFRawStream)) return ref;
+  const content = new TextDecoder("latin1").decode(decodePDFRawStream(stream).decode());
+  if (!/(?:\d*\.\d+|\d+)\s+(?:g|rg|k|G|RG|K)\b/.test(content)) return ref;
+  const blue = content
+    .replace(/(?:\d*\.\d+|\d+)(?:\s+(?:\d*\.\d+|\d+)){0,3}\s+(?:g|rg|k)\b/g, `${FILL_RGB.join(" ")} rg`)
+    .replace(/(?:\d*\.\d+|\d+)(?:\s+(?:\d*\.\d+|\d+)){0,3}\s+(?:G|RG|K)\b/g, `${FILL_RGB.join(" ")} RG`);
+  const dict = stream.dict.clone(pdf.context);
+  dict.delete(PDFName.of("Filter")); dict.delete(PDFName.of("DecodeParms")); dict.delete(PDFName.of("Length"));
+  return pdf.context.register(pdf.context.flateStream(blue, Object.fromEntries(dict.entries().map(([k, v]) => [k.asString().slice(1), v]))));
 }
