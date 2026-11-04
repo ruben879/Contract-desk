@@ -36,12 +36,14 @@ export type OfferTerms = {
   financed_amount: number | null;     // loan amount (Financing Addendum)
   loan_term_years: number | null;
   loan_rate_cap: number | null;       // percent, e.g. 7.5
+  loan_origination_cap: number | null; // percent of the loan, e.g. 1 (40-11 origination charges cap)
   fin_approval_days: number | null;   // Buyer Approval within N days (40-11 Para 2A)
   // Dates
   closing_date: string | null;        // "on or before", YYYY-MM-DD
   possession: "closing_and_funding";
   // Title & survey
   title_company: string | null;
+  title_company_address: string | null; // Para 5A: the escrow agent's address
   title_policy_payer: "seller" | "buyer" | null;   // Para 6A: owner's policy at whose expense
   survey_option: SurveyOption | null;
   survey_days: number | null;
@@ -89,9 +91,9 @@ export function emptyTerms(): OfferTerms {
     buyers: [], buyer_contact_ids: [], sellers: [],
     property_street: null, property_city: null, property_zip: null, property_county: null, lot: null, block: null, subdivision: null, year_built: null,
     sales_price: null, earnest_money: null, option_fee: null, option_period_days: null,
-    financing_type: null, financed_amount: null, loan_term_years: null, loan_rate_cap: null, fin_approval_days: null,
+    financing_type: null, financed_amount: null, loan_term_years: null, loan_rate_cap: null, loan_origination_cap: null, fin_approval_days: null,
     closing_date: null, possession: "closing_and_funding",
-    title_company: null, title_policy_payer: null, survey_option: null, survey_days: null, survey_new_payer: null,
+    title_company: null, title_company_address: null, title_policy_payer: null, survey_option: null, survey_days: null, survey_new_payer: null,
     addenda: [], hoa_association: null, hoa_info_days: null, hoa_fee_cap: null,
     appraisal_option: null, appraisal_value: null, appraisal_days: null, uploaded_forms: [],
     buyer_notice_address: null, buyer_notice_phone: null, buyer_notice_email: null,

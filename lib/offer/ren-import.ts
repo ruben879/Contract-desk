@@ -51,7 +51,7 @@ export const IMPORT_KEYS: ImportKey[] = [
   { path: "terms.possession", kind: "enum", values: ["closing_and_funding"], meaning: "Possession. Only closing_and_funding is supported.", term: "possession (fixed)" },
   { path: "terms.title_company", kind: "text", meaning: "Title company (Para 6A) and escrow agent (Para 5A).", term: "title_company" },
   { path: "terms.escrow_agent", kind: "text", meaning: "Escrow agent. Same field as title_company; if both are given they must match.", term: "title_company" },
-  { path: "terms.title_company_address", kind: "text", meaning: "Title company address.", term: null },
+  { path: "terms.title_company_address", kind: "text", meaning: "Title company address (Para 5A, the escrow agent's address). Placed only when the imported title company lands, or matches the one already on the offer.", term: "title_company_address" },
   { path: "terms.title_company_phone", kind: "text", meaning: "Title company phone.", term: null },
   { path: "terms.title_policy_payer", kind: "enum", values: ["seller", "buyer"], meaning: "Owner's title policy paid by (Para 6A).", term: "title_policy_payer" },
   { path: "terms.survey.option", kind: "enum", values: ["6C(1)", "6C(2)", "6C(3)"], meaning: "Survey paragraph: 6C(1) Seller's existing survey, 6C(2) Buyer's new survey, 6C(3) Seller's new survey.", term: "survey_option" },
@@ -63,7 +63,7 @@ export const IMPORT_KEYS: ImportKey[] = [
   { path: "financing_addendum.loan_amount", kind: "number", meaning: "Loan amount.", term: "financed_amount" },
   { path: "financing_addendum.term_years", kind: "number", meaning: "Loan term in years.", term: "loan_term_years" },
   { path: "financing_addendum.rate_cap_pct", kind: "number", meaning: "Interest rate cap, percent (7.75 = 7.75%).", term: "loan_rate_cap" },
-  { path: "financing_addendum.origination_cap_pct", kind: "number", meaning: "Origination charges cap, percent.", term: null },
+  { path: "financing_addendum.origination_cap_pct", kind: "number", meaning: "Origination charges cap, percent of the loan (1 = 1%). Prints for Conventional (1A) and FHA (1C); the 40-11 shares one blank between VA and Other, so it stays blank there.", term: "loan_origination_cap" },
   { path: "financing_addendum.buyer_approval.applies", kind: "bool", meaning: "Whether the offer is subject to Buyer Approval (40-11 Para 2A). false leaves it off.", term: "fin_approval_days (with days)" },
   { path: "financing_addendum.buyer_approval.days", kind: "number", meaning: "Days for Buyer Approval.", term: "fin_approval_days" },
 
@@ -225,6 +225,7 @@ export function parseRenImport(raw: unknown): ParsedImport {
     out.problems.push(`terms.cash_down is ${down} but sales price minus loan amount is ${v.sales_price - loan}. Used the loan amount.`);
   set("loan_term_years", num("financing_addendum.term_years"));
   set("loan_rate_cap", num("financing_addendum.rate_cap_pct"));
+  set("loan_origination_cap", num("financing_addendum.origination_cap_pct"));
   if (get(raw, "financing_addendum.buyer_approval.applies") === true) {
     const d = num("financing_addendum.buyer_approval.days");
     if (d != null) set("fin_approval_days", d);
@@ -237,6 +238,7 @@ export function parseRenImport(raw: unknown): ParsedImport {
   const title = text("terms.title_company"), escrow = text("terms.escrow_agent");
   if (title && escrow && title !== escrow) out.problems.push(`terms.title_company is "${title}" but terms.escrow_agent is "${escrow}". The form uses one title company for both; used "${title}".`);
   set("title_company", title ?? escrow);
+  set("title_company_address", text("terms.title_company_address"));
   set("title_policy_payer", choice("terms.title_policy_payer", ["seller", "buyer"]));
   const survey = choice("terms.survey.option", ["6C(1)", "6C(2)", "6C(3)"]);
   set("survey_option", survey ? ({ "6C(1)": "seller_existing", "6C(2)": "buyer_new", "6C(3)": "seller_new" } as Record<string, SurveyOption>)[survey] : null);
@@ -292,6 +294,14 @@ export function applyRenImport(t: OfferTerms, p: ParsedImport, fileName: string 
     out[k] = val;
     touched.add(k);
     filled.push(k);
+  }
+  // An address belongs to its title company: if the offer kept a different title company, the
+  // imported address would describe the wrong one, so it isn't placed.
+  if (filled.includes("title_company_address") && p.values.title_company && out.title_company !== p.values.title_company) {
+    out.title_company_address = t.title_company_address;
+    if (!t.touched.includes("title_company_address")) touched.delete("title_company_address");
+    filled.splice(filled.indexOf("title_company_address"), 1);
+    kept.push("title_company_address");
   }
   const addenda = new Set(t.addenda);
   for (const a of p.addenda) if (!addenda.has(a)) { addenda.add(a); filled.push(`addenda: ${a}`); }

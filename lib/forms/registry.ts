@@ -28,6 +28,12 @@ export type BundledForm = {
 const money = (n: number | null | undefined) => (n == null ? null : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const num = (n: number | null | undefined) => (n == null ? null : String(n));
 const always = () => true;
+/** "5010 122nd Street, Lubbock, TX 79424" -> ["5010 122nd Street", "Lubbock, TX 79424"]. */
+export const addressLines = (a: string | null | undefined): [string | null, string | null] => {
+  if (!a?.trim()) return [null, null];
+  const i = a.indexOf(",");
+  return i < 0 ? [a.trim(), null] : [a.slice(0, i).trim(), a.slice(i + 1).trim() || null];
+};
 const addr = (t: OfferTerms) => addressLine(t) || null;
 
 // ---------- TREC 20-19 One to Four Family Residential Contract (Resale) ----------
@@ -90,7 +96,10 @@ const MAP_20_19: MapEntry[] = [
   ...HEADER_FIELDS.map((f, i): MapEntry => ({ field: f, term: "property_street + city + ZIP", label: `Page ${i + 2} header: address`, value: addr, usual: always })),
   // 5. Earnest money and option fee
   { field: "undefined_6", term: "title_company", label: "Para 5A: Escrow Agent", value: (t) => t.title_company, usual: always },
-  { field: "other party in writing before entering into a contract of sale  Disclose if applicable", term: "(leave blank)", label: "Para 5A: Escrow Agent address", value: () => null, usual: always },
+  // Para 5A prints the escrow agent's address over two blanks: after "(Escrow Agent) at" and the line
+  // ending "(address)" (field "undefined_7", page 2, y 695). Street on the first, the rest on the second.
+  { field: "other party in writing before entering into a contract of sale  Disclose if applicable", term: "title_company_address", label: "Para 5A: Escrow Agent address", value: (t) => addressLines(t.title_company_address)[0], usual: always },
+  { field: "undefined_7", term: "title_company_address", label: "Para 5A: Escrow Agent address (second line)", value: (t) => addressLines(t.title_company_address)[1] },
   { field: "as earnest money to", term: "earnest_money", label: "Para 5A: Earnest money", value: (t) => money(t.earnest_money), usual: always },
   { field: "as earnest money to 2", term: "option_fee", label: "Para 5A: Option fee", value: (t) => money(t.option_fee), usual: always },
   { field: "the Title Company and Buyers lenders Check one box only", term: "option_period_days", label: "Para 5B: Option period days", value: (t) => num(t.option_period_days), usual: always },
@@ -190,7 +199,7 @@ const MAP_40_11: MapEntry[] = [
   { field: "any financed PMI premium due in full in 1", term: "loan_term_years", label: "1A(1): Due in full in (years)", value: when(conv, (t) => num(t.loan_term_years)), usual: conv },
   { field: "any financed PMI premium due in full in 2", term: "loan_rate_cap", label: "1A(1): Interest not to exceed (%)", value: when(conv, (t) => num(t.loan_rate_cap)), usual: conv },
   { field: "per annum for the first", term: "(leave blank)", label: "1A(1): Rate cap applies for the first (years)", value: () => null, usual: conv },
-  { field: "shown on Buyers Loan Estimate for the loan not to exceed", term: "(leave blank)", label: "1A(1): Origination charges not to exceed (%)", value: () => null, usual: conv },
+  { field: "shown on Buyers Loan Estimate for the loan not to exceed", term: "loan_origination_cap", label: "1A(1): Origination charges not to exceed (%)", value: when(conv, (t) => num(t.loan_origination_cap)), usual: conv },
   // C. FHA
   { field: "3 FHA Insured Financing A Section", term: "financing_type = fha", label: "1C: FHA insured financing", value: fha },
   { field: "undefined", term: "(leave blank)", label: "1C: FHA Section", value: () => null, usual: fha },
@@ -198,7 +207,7 @@ const MAP_40_11: MapEntry[] = [
   { field: "than", term: "loan_term_years", label: "1C: Term (years)", value: when(fha, (t) => num(t.loan_term_years)), usual: fha },
   { field: "years with interest not to exceed_2", term: "loan_rate_cap", label: "1C: Interest not to exceed (%)", value: when(fha, (t) => num(t.loan_rate_cap)), usual: fha },
   { field: "Text1", term: "(leave blank)", label: "1C: Rate cap applies for the first (years)", value: () => null, usual: fha },
-  { field: "not to exceed", term: "(leave blank)", label: "1C: Origination charges not to exceed (%)", value: () => null, usual: fha },
+  { field: "not to exceed", term: "loan_origination_cap", label: "1C: Origination charges not to exceed (%)", value: when(fha, (t) => num(t.loan_origination_cap)), usual: fha },
   // D. VA (internal name says "Reverse Mortgage"; the printed label is D. VA GUARANTEED FINANCING)
   { field: "6 Reverse Mortgage Financing A reverse mortgage loan also known as a Home Equity", term: "financing_type = va", label: "1D: VA guaranteed financing", value: va },
   { field: "excluding_2", term: "financed_amount", label: "1D: Loan amount", value: when(va, (t) => money(t.financed_amount)), usual: va },

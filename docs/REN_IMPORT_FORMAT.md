@@ -77,7 +77,7 @@ Worked example: `tests/fixtures/Offer_Import_2131_S_Loop_289.json` (the Gurrola 
 | `terms.possession` | one of `closing_and_funding` | Possession. Only closing_and_funding is supported. | possession (fixed) |
 | `terms.title_company` | text | Title company (Para 6A) and escrow agent (Para 5A). | title_company |
 | `terms.escrow_agent` | text | Escrow agent. Same field as title_company; if both are given they must match. | title_company |
-| `terms.title_company_address` | text | Title company address. | Not used yet (read and listed) |
+| `terms.title_company_address` | text | Title company address (Para 5A, the escrow agent's address). Placed only when the imported title company lands, or matches the one already on the offer. | title_company_address |
 | `terms.title_company_phone` | text | Title company phone. | Not used yet (read and listed) |
 | `terms.title_policy_payer` | one of `seller`, `buyer` | Owner's title policy paid by (Para 6A). | title_policy_payer |
 | `terms.survey.option` | one of `6C(1)`, `6C(2)`, `6C(3)` | Survey paragraph: 6C(1) Seller's existing survey, 6C(2) Buyer's new survey, 6C(3) Seller's new survey. | survey_option |
@@ -93,7 +93,7 @@ Worked example: `tests/fixtures/Offer_Import_2131_S_Loop_289.json` (the Gurrola 
 | `financing_addendum.loan_amount` | number | Loan amount. | financed_amount |
 | `financing_addendum.term_years` | number | Loan term in years. | loan_term_years |
 | `financing_addendum.rate_cap_pct` | number | Interest rate cap, percent (7.75 = 7.75%). | loan_rate_cap |
-| `financing_addendum.origination_cap_pct` | number | Origination charges cap, percent. | Not used yet (read and listed) |
+| `financing_addendum.origination_cap_pct` | number | Origination charges cap, percent of the loan (1 = 1%). Prints for Conventional (1A) and FHA (1C); the 40-11 shares one blank between VA and Other, so it stays blank there. | loan_origination_cap |
 | `financing_addendum.buyer_approval.applies` | true / false | Whether the offer is subject to Buyer Approval (40-11 Para 2A). false leaves it off. | fin_approval_days (with days) |
 | `financing_addendum.buyer_approval.days` | number | Days for Buyer Approval. | fin_approval_days |
 

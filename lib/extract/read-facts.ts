@@ -12,7 +12,7 @@ import type { OfferAddendum, OfferTerms } from "@/lib/offer/terms";
 export const FACT_KEYS = [
   "sellers", "property_street", "property_city", "property_state", "property_zip", "property_county",
   "legal_description", "lot", "block", "subdivision", "year_built", "hoa_mandatory", "hoa_name",
-  "title_company", "listing_broker_firm", "listing_broker_license", "listing_broker_address", "listing_broker_phone",
+  "title_company", "title_company_address", "listing_broker_firm", "listing_broker_license", "listing_broker_address", "listing_broker_phone",
   "listing_agent_name", "listing_agent_license", "listing_agent_email", "listing_agent_phone", "mls_number",
 ] as const;
 export type FactKey = (typeof FACT_KEYS)[number];
@@ -27,6 +27,7 @@ const GUIDE: Record<FactKey, string> = {
   hoa_mandatory: "Whether membership in an owners association is mandatory: 'yes' or 'no', only if the document says so",
   hoa_name: "Owners association name, if shown",
   title_company: "Title company exactly as named in the document (e.g. a 'Title Company' or 'Preferred Title' field)",
+  title_company_address: "That title company's address, only if the document prints it",
   listing_broker_firm: "Listing brokerage / office name", listing_broker_license: "Listing office license number",
   listing_broker_address: "Listing office address", listing_broker_phone: "Listing office phone",
   listing_agent_name: "Listing agent name", listing_agent_license: "Listing agent license number",
@@ -36,7 +37,7 @@ const GUIDE: Record<FactKey, string> = {
 export const FACT_LABELS: Record<FactKey, string> = {
   sellers: "Seller", property_street: "Street address", property_city: "City", property_state: "State", property_zip: "ZIP",
   property_county: "County", legal_description: "Legal description", lot: "Lot", block: "Block", subdivision: "Addition",
-  year_built: "Year built", hoa_mandatory: "HOA", hoa_name: "Association name", title_company: "Title company",
+  year_built: "Year built", hoa_mandatory: "HOA", hoa_name: "Association name", title_company: "Title company", title_company_address: "Title company address",
   listing_broker_firm: "Listing brokerage", listing_broker_license: "Listing brokerage license", listing_broker_address: "Listing brokerage address", listing_broker_phone: "Listing brokerage phone",
   listing_agent_name: "Listing agent", listing_agent_license: "Listing agent license", listing_agent_email: "Listing agent email",
   listing_agent_phone: "Listing agent phone", mls_number: "MLS number",
@@ -127,6 +128,7 @@ export function factsToImport(read: FactsRead): { parsed: ParsedImport; could_no
   const year = Number(f.year_built?.match(/\b(1[89]\d\d|20\d\d)\b/)?.[1]);
   if (Number.isFinite(year)) set("year_built", year);
   set("title_company", f.title_company);
+  set("title_company_address", f.title_company_address);
   set("listing_broker_firm", f.listing_broker_firm);
   set("listing_broker_license", f.listing_broker_license);
   set("listing_broker_address", f.listing_broker_address);

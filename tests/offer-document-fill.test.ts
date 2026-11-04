@@ -19,6 +19,7 @@ const flexPrint = {
     { field: "hoa_mandatory", value: "no", confidence: "medium", page: 1 },
     { field: "sellers", value: "Estate of Karl Sheridan Morris", confidence: "medium", page: 2 },
     { field: "title_company", value: "True Title", confidence: "high", page: 2 },
+    { field: "title_company_address", value: "5010 122nd Street, Lubbock, TX 79424", confidence: "high", page: 2 },
     { field: "listing_broker_firm", value: "Taylor Reid Realty", confidence: "high", page: 1 },
     { field: "listing_broker_license", value: "9010699", confidence: "medium", page: 1 },
     { field: "listing_agent_name", value: "Stuart Bartley", confidence: "high", page: 1 },
@@ -40,6 +41,7 @@ describe("Fill from a document: FlexMLS print for MLS #202614455", () => {
     expect([t.lot, t.subdivision, t.year_built]).toEqual(["377", "Beverly Heights", 1959]);
     expect(t.sellers).toEqual(["Estate of Karl Sheridan Morris"]);
     expect(t.title_company).toBe("True Title");
+    expect(t.title_company_address).toBe("5010 122nd Street, Lubbock, TX 79424");
     expect([t.listing_agent_name, t.listing_broker_firm, t.listing_agent_email]).toEqual(["Stuart Bartley", "Taylor Reid Realty", "stuart@lindseybartleyteam.com"]);
   });
   it("leaves sales price, earnest money and closing date for the agent", () => {
@@ -70,7 +72,7 @@ describe("Fill from a document: rules", () => {
   it("facts only: the reader has no field for any negotiated term", () => {
     const allowed = ((factsFormat.schema.properties as any).fields.items.properties.field.enum) as string[];
     expect(allowed).toEqual([...FACT_KEYS]);
-    for (const k of ["sales_price", "list_price", "earnest_money", "option_fee", "option_period_days", "closing_date", "financed_amount"]) expect(allowed).not.toContain(k);
+    for (const k of ["sales_price", "list_price", "earnest_money", "option_fee", "option_period_days", "closing_date", "financed_amount", "loan_origination_cap", "origination_cap_pct"]) expect(allowed).not.toContain(k);
     // Even if a reader answer carried one, it would be dropped.
     const r = factsFromWire({ fields: [{ field: "sales_price", value: "139900", confidence: "high" }], warnings: [] });
     expect(r.facts).toEqual({});

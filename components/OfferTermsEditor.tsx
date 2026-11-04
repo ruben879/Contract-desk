@@ -110,6 +110,8 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
               <Num label="Term (years)" value={t.loan_term_years} onChange={(v) => update({ loan_term_years: v })} required />
               <Num label="Rate cap (%)" value={t.loan_rate_cap} onChange={(v) => update({ loan_rate_cap: v })} decimal required />
             </Row>
+            <Num label="Origination charges cap (% of loan)" value={t.loan_origination_cap} onChange={(v) => update({ loan_origination_cap: v })} decimal
+              hint={t.financing_type === "va" || t.financing_type === "other" ? "On the 40-11 this blank is shared by the VA and Other sections, so it stays blank for VA and Other loans." : undefined} />
             <Num label="Buyer approval (days)" value={t.fin_approval_days} onChange={(v) => update({ fin_approval_days: v })} hint="Para 2A. Leave empty if the buyer isn't asking for this." />
             {cash != null && <p className="text-[14px] text-muted">Cash portion: {money(cash)}</p>}
           </Inset>
@@ -134,6 +136,7 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
           <input className={inputCls} list="title-cos" value={t.title_company ?? ""} disabled={locked} onChange={(e) => update({ title_company: e.target.value || null })} />
           <datalist id="title-cos">{titleCompanies.map((c) => <option key={c} value={c} />)}</datalist>
         </Field>
+        <Text label="Title company address" value={t.title_company_address} onChange={(v) => update({ title_company_address: v })} />
         <Field label="Owner's title policy paid by (Para 6A)" group>
           <div className="flex gap-2">
             <Chip on={t.title_policy_payer === "seller"} onClick={() => update({ title_policy_payer: "seller" })}>Seller</Chip>

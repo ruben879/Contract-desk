@@ -2,8 +2,16 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { applyRenImport, IMPORT_KEYS, ImportRefused, parseRenImport, splitLegal, TERMS_WITHOUT_IMPORT_KEY } from "@/lib/offer/ren-import";
 import { applyBrokerageDefaults, emptyTerms, enforceRules, normalizeTerms, STANDARD_OFFER_DEFAULTS as D, type OfferTerms } from "@/lib/offer/terms";
-import { renderPacket } from "@/lib/offer/render";
+import { bundledBytes, renderPacket } from "@/lib/offer/render";
+import { PDFDocument } from "pdf-lib";
 import { freshOffer, gurrolaFile } from "./fixtures/gurrola";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+async function pageItems(bytes: Uint8Array, page: number) {
+  const doc = await getDocument({ data: bytes.slice() }).promise;
+  const items = (await (await doc.getPage(page)).getTextContent()).items as { str: string; transform: number[] }[];
+  return items.map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5] }));
+}
 
 const settle = (t: OfferTerms) => enforceRules(applyBrokerageDefaults(t, D, "Brokerage Default Title"));
 const importInto = (t: OfferTerms, file = gurrolaFile()) => settle(applyRenImport(t, parseRenImport(file), "Offer_Import_2131_S_Loop_289.json"));
@@ -18,7 +26,8 @@ describe("Ren import: the Gurrola example into a fresh offer", () => {
     expect(t.title_company).toBe("True Title");
     expect([t.sales_price, t.financing_type, t.financed_amount]).toEqual([135000, "conventional", 108000]);
     expect(t.sales_price! - t.financed_amount!).toBe(27000);
-    expect([t.loan_rate_cap, t.loan_term_years, t.fin_approval_days]).toEqual([7.75, 30, 15]);
+    expect([t.loan_rate_cap, t.loan_term_years, t.fin_approval_days, t.loan_origination_cap]).toEqual([7.75, 30, 15, 1]);
+    expect(t.title_company_address).toBe("5010 122nd Street, Lubbock, TX 79424");
     expect(t.addenda).toEqual(["third_party_financing", "lead_based_paint", "appraisal_termination"]);
     expect([t.appraisal_option, t.appraisal_days, t.appraisal_value]).toEqual(["additional_right", 30, 135000]);
     expect(t.closing_date).toBe("2026-12-08");
@@ -31,7 +40,9 @@ describe("Ren import: the Gurrola example into a fresh offer", () => {
   });
   it("records the import: prepared date and MLS number for the Terms screen line", () => {
     expect(t.imported).toMatchObject({ kind: "ren", prepared: "2026-11-04", mls_number: "202614455", kept: [], unknown: [], problems: [] });
-    expect(t.imported!.unused).toEqual(expect.arrayContaining(["source.notes", "terms.title_company_address", "financing_addendum.origination_cap_pct", "listing_side.brokerage_phone"]));
+    expect(t.imported!.unused).toEqual(expect.arrayContaining(["source.notes", "terms.title_company_phone", "listing_side.brokerage_phone"]));
+    expect(t.imported!.unused).not.toContain("terms.title_company_address");
+    expect(t.imported!.unused).not.toContain("financing_addendum.origination_cap_pct");
   });
   it("imported values are hand-entered: a price change doesn't move the imported earnest money", () => {
     expect(t.touched).toEqual(expect.arrayContaining(["earnest_money", "option_fee", "title_company", "sales_price"]));
@@ -50,6 +61,19 @@ describe("Ren import: the Gurrola example into a fresh offer", () => {
     expect([v["undefined_6"], v["as earnest money to"], v["as earnest money to 2"]]).toEqual(["True Title", "1,300.00", "100.00"]);
     expect(parts.map((p) => (p.kind === "bundled" ? p.id : p.title))).toEqual(["TREC-20-19", "TREC-40-11", "TREC-49-1", "TREC-56-0"]);
   });
+  it("the export places True Title's address in Para 5A and the 1% origination cap on the 40-11", async () => {
+    const { contractValues: v, blanks } = await renderPacket(t, []);
+    expect(v["other party in writing before entering into a contract of sale  Disclose if applicable"]).toBe("5010 122nd Street");
+    expect(v["undefined_7"]).toBe("Lubbock, TX 79424");
+    expect(blanks.map((b) => b.label)).not.toContain("1A(1): Origination charges not to exceed (%)");
+    expect(blanks.map((b) => b.label)).not.toContain("Para 5A: Escrow Agent address");
+    // On the 40-11's first page, "1" prints inside the 1A(1) origination blank (x 352-393, y 509).
+    const { bytes, parts } = await renderPacket(t, []);
+    const firstFinPage = 1 + (await PDFDocument.load(await bundledBytes("TREC-20-19"))).getPageCount();
+    expect(parts[1]).toMatchObject({ id: "TREC-40-11" });
+    const items = await pageItems(bytes, firstFinPage);
+    expect(items.some((it) => it.str.trim() === "1" && it.x >= 350 && it.x <= 395 && Math.abs(it.y - 511) < 8)).toBe(true);
+  });
 });
 
 describe("Ren import rules", () => {
@@ -60,6 +84,20 @@ describe("Ren import rules", () => {
     expect(t.sellers).toEqual(["Someone Else"]);
     expect(t.closing_date).toBe("2026-12-08");
     expect(t.imported!.kept).toEqual(expect.arrayContaining(["sales_price", "sellers"]));
+  });
+  it("an imported title company address isn't placed next to a different title company the agent typed", () => {
+    const mine = settle({ ...freshOffer(), title_company: "Agent's Title Co", touched: ["title_company"] });
+    const t = importInto(mine);
+    expect([t.title_company, t.title_company_address]).toEqual(["Agent's Title Co", null]);
+    expect(t.imported!.kept).toEqual(expect.arrayContaining(["title_company", "title_company_address"]));
+    const same = importInto(settle({ ...freshOffer(), title_company: "True Title", touched: ["title_company"] }));
+    expect(same.title_company_address).toBe("5010 122nd Street, Lubbock, TX 79424");
+  });
+  it("VA and Other loans leave the shared origination blank empty", async () => {
+    const va = importInto(freshOffer(), { ...gurrolaFile(), terms: { ...gurrolaFile().terms, financing: "va" }, financing_addendum: { ...gurrolaFile().financing_addendum, loan_type: "va" } });
+    expect(va.loan_origination_cap).toBe(1);
+    const { blanks } = await renderPacket(va, []);
+    expect(blanks.map((b) => b.label)).toContain("1D/1G: Origination charges not to exceed (%)");
   });
   it("an addendum the file omits or sets false leaves the box as it is", () => {
     const withHoa = settle({ ...freshOffer(), addenda: ["hoa"], touched: ["addenda"] });

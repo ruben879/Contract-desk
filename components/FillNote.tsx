@@ -6,7 +6,7 @@ const LABEL: Record<string, string> = {
   lot: "lot", block: "block", subdivision: "addition", year_built: "year built", sales_price: "sales price", earnest_money: "earnest money",
   option_fee: "option fee", option_period_days: "option period", financing_type: "financing", financed_amount: "loan amount",
   loan_term_years: "loan term", loan_rate_cap: "rate cap", fin_approval_days: "buyer approval days", closing_date: "closing date",
-  title_company: "title company", title_policy_payer: "title policy payer", survey_option: "survey", survey_days: "survey days",
+  title_company: "title company", title_company_address: "title company address", loan_origination_cap: "origination cap", title_policy_payer: "title policy payer", survey_option: "survey", survey_days: "survey days",
   survey_new_payer: "new survey payer", appraisal_option: "appraisal option", appraisal_days: "appraisal days", appraisal_value: "appraisal amount",
   hoa_association: "association", hoa_info_days: "HOA information days", hoa_fee_cap: "HOA fee cap",
   buyer_broker_comp_type: "compensation type", buyer_broker_comp_value: "compensation", buyer_notice_email: "buyer email",

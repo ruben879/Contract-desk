@@ -95,6 +95,21 @@ function blueAppearance(da: string | undefined) {
   return `${base} ${FILL_RGB.join(" ")} rg`;
 }
 
+/**
+ * A value too long for its blank at the form's font size prints smaller (down to 6 pt) instead of
+ * being cut off. Auto-size fields (size 0) are left to the viewer's own sizing.
+ */
+function shrinkToFit(da: string | undefined, text: string, font: { widthOfTextAtSize(t: string, s: number): number }, width: number) {
+  const m = (da ?? "").match(/(\/[^\s/]+)\s+(\d*\.?\d+)\s+Tf/);
+  const size = m ? Number(m[2]) : 0;
+  if (!m || !(size > 0)) return da;
+  const room = width - 4; // pdf-lib's padding and border
+  const need = font.widthOfTextAtSize(text, size);
+  if (need <= room) return da;
+  const fitted = Math.max(6, Math.floor(((size * room) / need) * 10) / 10);
+  return da!.replace(m[0], `${m[1]} ${fitted} Tf`);
+}
+
 export async function fillForm(pdf: PDFDocument, values: FieldValues) {
   const form = pdf.getForm();
   const font = await pdf.embedFont(FILL_FONT);
@@ -111,8 +126,10 @@ export async function fillForm(pdf: PDFDocument, values: FieldValues) {
       if (max && text.length > max) throw new Error(`"${text}" is longer than field "${name}" allows (${max})`);
       f.setText(text);
       const fieldDA = f.acroField.getDefaultAppearance() ?? formDA;
-      f.acroField.setDefaultAppearance(blueAppearance(fieldDA));
-      for (const w of f.acroField.getWidgets()) w.setDefaultAppearance(blueAppearance(w.getDefaultAppearance() ?? fieldDA));
+      const fit = (da: string | undefined, w: { getRectangle(): { width: number } }) => (f.isMultiline() ? da : shrinkToFit(da, text, font, w.getRectangle().width));
+      const widgets = f.acroField.getWidgets();
+      f.acroField.setDefaultAppearance(blueAppearance(widgets[0] ? fit(fieldDA, widgets[0]) : fieldDA));
+      for (const w of widgets) w.setDefaultAppearance(blueAppearance(fit(w.getDefaultAppearance() ?? fieldDA, w)));
     } else if (f instanceof PDFCheckBox) {
       if (v !== true) continue;
       f.check();

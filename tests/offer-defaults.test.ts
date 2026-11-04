@@ -159,6 +159,19 @@ describe("fill style", () => {
     expect(came.marks).toBe(blank.marks - 1);  // the renderer didn't ink it...
     expect(came.plain).toBe(blank.plain + 1);  // ...it was drawn as the form had it, without the blue
   });
+  it("a value too long for its blank prints smaller instead of being cut off", async () => {
+    const long = "Stewart Title Guaranty Company of West Texas, Lubbock Office";
+    const { bytes } = await renderPacket(gurrola({ title_company: long, touched: ["title_company"] }), []);
+    const pdf = await PDFDocument.load(bytes);
+    const hex = Buffer.from(long).toString("hex").toUpperCase();
+    const drawn = drawnAppearances(pdf).filter((d) => d.content.toUpperCase().includes(hex));
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const d of drawn) {
+      const size = Number(d.content.match(/([\d.]+) Tf/)![1]);
+      expect(size).toBeLessThan(9);
+      expect(size).toBeGreaterThanOrEqual(6);
+    }
+  });
   it("the form itself is unchanged: printed text and positions match the blank 20-19", async () => {
     const { bytes } = await renderPacket(gurrola(), []);
     const blank = new Uint8Array(fs.readFileSync("forms/trec/TREC-20-19.pdf"));
