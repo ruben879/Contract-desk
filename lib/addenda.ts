@@ -14,6 +14,7 @@ export const ADDENDA = {
   sellers_temp_lease: "Seller's Temporary Residential Lease",
   back_up_contract: "Addendum for Back-Up Contract",
   non_realty_items: "Non-Realty Items Addendum",
+  appraisal_termination: "Addendum Concerning Right to Terminate Due to Lender's Appraisal",
   amendment: "Amendment to Contract",
   other: "Other addendum or form",
 } as const;

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireMember, intakeAddress } from "@/lib/context";
@@ -107,6 +108,11 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <h1 className="text-xl font-bold">Settings</h1>
         <a href="/profile" className="text-sm font-medium text-brand">Your profile</a>
       </div>
+
+      <Link href="/settings/forms" className="mb-2 flex min-h-11 items-center justify-between rounded-card bg-card px-4 py-3 shadow-card">
+        <span><span className="block font-medium">Offers and forms</span><span className="block text-[14px] text-muted">Offer defaults, built-in TREC forms, your form library</span></span>
+        <span className="text-muted" aria-hidden>›</span>
+      </Link>
 
       <SectionTitle>Brokerage profile</SectionTitle>
       <Card className="space-y-4">

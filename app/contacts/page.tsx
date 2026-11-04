@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/context";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, SectionTitle, inputCls } from "@/components/ui";
+import { createOffer } from "@/app/o/actions";
 
 const TYPES: [string, string][] = [
   ["buyer", "Buyers"], ["seller", "Sellers"], ["listing_agent", "Listing agents"], ["buyer_agent", "Buyer's agents"],
@@ -42,9 +43,17 @@ export default async function Contacts({ searchParams }: { searchParams: Promise
             <SectionTitle>{label}</SectionTitle>
             <Card className="divide-y divide-line p-0 sm:p-0">
               {list.map((c) => (
-                <div key={c.id} className="px-4 py-3">
-                  <div className="font-medium">{c.full_name}{c.company && c.company !== c.full_name && <span className="font-normal text-muted"> · {c.company}</span>}</div>
-                  <div className="text-sm text-muted">{[c.phone, c.email].filter(Boolean).join(" · ")}</div>
+                <div key={c.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <div className="font-medium">{c.full_name}{c.company && c.company !== c.full_name && <span className="font-normal text-muted"> · {c.company}</span>}</div>
+                    <div className="text-sm text-muted">{[c.phone, c.email].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  {c.type === "buyer" && (
+                    <form action={createOffer}>
+                      <input type="hidden" name="buyer_contact_id" value={c.id} />
+                      <button className="min-h-11 shrink-0 rounded-xl px-3 text-[14px] font-medium text-brand hover:bg-brand-soft">New offer</button>
+                    </form>
+                  )}
                 </div>
               ))}
             </Card>

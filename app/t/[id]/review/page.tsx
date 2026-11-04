@@ -9,6 +9,9 @@ import type { DeadlineRule } from "@/lib/deadlines/compute";
 import { sameProperty } from "@/lib/address";
 import { AddMoreDocuments, DuplicateNotice } from "./ReviewExtras";
 import { deriveMissingDocs } from "@/lib/missing-docs";
+import { matchOpenOffer } from "@/lib/offer/server";
+import { writtenVsSigned, type ExtractedForMatch } from "@/lib/offer/match";
+import { WrittenVsSigned } from "@/components/WrittenVsSigned";
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -37,6 +40,16 @@ function contactsFromExtraction(ex: Extraction, ourAgentLicenses: Set<string>): 
   if (ex.title_company.value) rows.push({ role: "title_company", full_name: ex.escrow_officer.value || ex.title_company.value, company: ex.title_company.value, email: "", phone: "" });
   if (ex.lender_name.value) rows.push({ role: "lender", full_name: ex.lender_name.value, company: ex.lender_name.value, email: "", phone: "" });
   return rows;
+}
+
+/** The read contract, as the return match and the Written vs Signed diff see it (attached addenda only). */
+function signedForMatch(ex: Extraction): ExtractedForMatch {
+  return {
+    property_street: ex.property_street.value, property_city: ex.property_city.value, property_zip: ex.property_zip.value,
+    buyers: ex.buyers.value, sales_price: ex.sales_price.value, earnest_money: ex.earnest_money.value,
+    option_fee: ex.option_fee.value, option_period_days: ex.option_period_days.value, closing_date: ex.closing_date.value,
+    financing_type: ex.financing_type.value, addenda: ex.addenda.filter((a) => a.evidence === "attached").map((a) => a.key),
+  };
 }
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -138,6 +151,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     });
   }
 
+  // Return match: was this contract written here as an offer?
+  let offerDiff: { offerId: string; rows: ReturnType<typeof writtenVsSigned> } | null = null;
+  if (!confirmed && ex) {
+    const signed = signedForMatch(ex);
+    const offer = await matchOpenOffer(supabase, signed);
+    if (offer) offerDiff = { offerId: offer.id, rows: writtenVsSigned(offer.terms, signed) };
+  }
+
   return (
     <AppShell brokerage={brokerage.name} logoUrl={brokerage.logo_url} showSettings={isBrokerOrStaff} wide>
       <SourceLayout docs={docs.map((d) => ({ name: d.file_name, url: d.url, scanned: !!d.is_scanned }))}>
@@ -159,6 +180,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           rules={(rules ?? []) as DeadlineRule[]}
           currentDeadlines={confirmed ? deadlines ?? [] : null}
           extras={<>
+            {offerDiff && <WrittenVsSigned offerId={offerDiff.offerId} rows={offerDiff.rows} />}
             <DuplicateNotice draftId={id} matches={duplicates} />
             <AddMoreDocuments transactionId={id} confirmed={confirmed} />
           </>}

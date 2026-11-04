@@ -6,6 +6,9 @@ import { Dropzone } from "@/components/Dropzone";
 import { cx } from "@/components/ui";
 import { startUpload } from "@/app/actions";
 import { daysBetween, formatShort, todayIn } from "@/lib/dates";
+import { createOffer } from "@/app/o/actions";
+import { OFFER_STATUS_LABEL } from "@/lib/offer/terms";
+import { money } from "@/components/ui";
 
 type Row = {
   id: string; status: string; property_street: string | null; property_city: string | null;
@@ -21,11 +24,13 @@ export default async function Deals() {
   await expireStaleReads(brokerage.id);
   const today = todayIn(brokerage.timezone);
 
-  const [{ data }, { data: pending }] = await Promise.all([
+  const [{ data }, { data: pending }, { data: offers }] = await Promise.all([
     supabase.from("transactions")
       .select("id, status, property_street, property_city, deadlines(key, label, due_date), checklist_items(title, status, deadline_key, sort), documents(file_name)")
       .in("status", ["reading", "needs_review", "failed", "active"]).order("created_at", { ascending: false }).returns<Row[]>(),
     supabase.from("extractions").select("transaction_id").eq("kind", "amendment").eq("status", "ready"),
+    // Offers not yet executed. Tolerates the offers table not existing yet (before migration 0009).
+    supabase.from("offers").select("id, status, terms, edited_since_export, updated_at").neq("status", "executed").order("updated_at", { ascending: false }).limit(50),
   ]);
   const amended = new Set((pending ?? []).map((p) => p.transaction_id));
 
@@ -52,6 +57,30 @@ export default async function Deals() {
     <AppShell brokerage={brokerage.name} logoUrl={brokerage.logo_url}>
       <h1 className="mb-4 mt-2 text-[26px] font-semibold leading-tight tracking-[-0.01em]">{isBrokerOrStaff ? "Deals" : "Your deals"}</h1>
       <Dropzone compact start={startUpload} label="Start a deal" hint="Drop the executed contract, or tap to choose PDFs or take photos." />
+      <form action={createOffer} className="mt-3">
+        <button className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border-[1.5px] border-line bg-card px-4 text-[15px] font-medium text-brand">Write an offer</button>
+      </form>
+
+      {!!offers?.length && (
+        <>
+          <h2 className="mb-2 mt-6 text-[15px] font-semibold">Offers</h2>
+          <ul className="overflow-hidden rounded-card bg-card shadow-card">
+            {offers.map((o) => {
+              const t = (o.terms ?? {}) as { property_street?: string; property_city?: string; sales_price?: number };
+              return (
+                <li key={o.id} className="border-b border-line last:border-b-0">
+                  <Link href={`/o/${o.id}`} className="block px-4 py-3.5 hover:bg-paper">
+                    <div className="font-medium leading-snug">{t.property_street ? [t.property_street, t.property_city].filter(Boolean).join(", ") : "New offer"}</div>
+                    <div className={cx("text-[15px]", o.edited_since_export ? "font-medium text-warn" : "text-muted")}>
+                      {OFFER_STATUS_LABEL[o.status]}{t.sales_price != null ? ` · ${money(t.sales_price)}` : ""}{o.edited_since_export ? " · changed since export" : ""}
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
 
       {rows.length === 0 ? (
         <p className="mt-6 text-muted">No open deals yet. Your first confirmed contract shows up here.</p>

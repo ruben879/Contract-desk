@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireMember } from "@/lib/context";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { applyConfirmedTerms } from "@/lib/apply";
+import { matchOpenOffer } from "@/lib/offer/server";
 import { ADDENDUM_KEYS, DISCLOSURE_STATUSES, FINANCING_TYPES, type AddendumKey } from "@/lib/addenda";
 
 const blank = (v: unknown) => (v === "" || v == null ? null : v);
@@ -75,6 +76,16 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
     const { data: ex } = await admin.from("extractions").select("id").eq("transaction_id", id).eq("kind", "initial")
       .eq("status", "ready").order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (ex) await admin.from("extractions").update({ status: "confirmed", confirmed_at: new Date().toISOString(), confirmed_by: user.id, applied: terms }).eq("id", ex.id);
+
+    // Return match, checked again against what was just confirmed. The offer keeps its written
+    // Terms as history; the deal carries the signed ones.
+    const offer = await matchOpenOffer(supabase, {
+      property_street: terms.property_street, property_city: terms.property_city, property_zip: terms.property_zip,
+      buyers: people.filter((p) => p.role === "buyer").map((p) => p.full_name),
+      sales_price: terms.sales_price, earnest_money: terms.earnest_money, option_fee: terms.option_fee,
+      option_period_days: terms.option_period_days, closing_date: terms.closing_date, financing_type: terms.financing_type, addenda: terms.addenda,
+    });
+    if (offer) await supabase.from("offers").update({ status: "executed", executed_transaction_id: id, executed_at: new Date().toISOString(), edited_since_export: false }).eq("id", offer.id);
   }
 
   redirect(`/t/${id}`);
