@@ -177,7 +177,7 @@ function MapRowView({ versionId, row, terms }: { versionId: string; row: MapRow;
     <li className="border-b border-line py-3 last:border-b-0">
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
         <span className="break-all font-mono text-[14px]">{row.name}</span>
-        <span className="text-[13px] text-muted">Page {row.page + 1} · {row.type === "check" ? "checkbox" : row.type}</span>
+        <span className="text-[13px] text-muted">Page {row.page} · {row.type === "check" ? "checkbox" : row.type}</span>
       </div>
       <div className="flex gap-2">
         <select className={inputCls} value={choice} onChange={(e) => setChoice(e.target.value)} disabled={pending}>

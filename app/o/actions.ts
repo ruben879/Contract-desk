@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/context";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { loadOffer, startingTerms, uploadedForRender } from "@/lib/offer/server";
+import { loadOffer, startingTerms, uploadedForRender, withBrokerageDefaults } from "@/lib/offer/server";
 import { enforceRules, exportBlockers, normalizeTerms, packetFileName, type OfferTerms } from "@/lib/offer/terms";
 import { renderPacket } from "@/lib/offer/render";
 
@@ -25,7 +25,7 @@ export async function saveTerms(id: string, raw: unknown): Promise<{ ok: true } 
   const offer = await loadOffer(supabase, id);
   if (!offer) return { error: "Offer not found." };
   if (offer.status === "executed") return { error: "This offer was executed; its terms are now the signed contract's." };
-  const terms = enforceRules(normalizeTerms(raw));
+  const terms = await withBrokerageDefaults(supabase, offer.brokerage_id, enforceRules(normalizeTerms(raw)));
   const { error } = await supabase.from("offers").update({
     terms, updated_at: new Date().toISOString(),
     ...(offer.status === "out_for_signature" ? { edited_since_export: true } : {}),

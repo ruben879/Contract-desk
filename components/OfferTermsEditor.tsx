@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } f
 import { cx, inputCls, money } from "@/components/ui";
 import { saveTerms, goToPreview } from "@/app/o/actions";
 import {
-  OFFER_FINANCING, OFFER_FINANCING_LABELS, appraisalAllowed, cashPortion, deadlinePreview, enforceRules, exportBlockers,
+  OFFER_FINANCING, OFFER_FINANCING_LABELS, appraisalAllowed, applyBrokerageDefaults, type OfferDefaults, cashPortion, deadlinePreview, enforceRules, exportBlockers,
   isLoan, suggestLeadPaint, type CatalogTerm, type OfferAddendum, type OfferTerms,
 } from "@/lib/offer/terms";
 import { formatDate } from "@/lib/dates";
@@ -11,8 +11,10 @@ import { formatDate } from "@/lib/dates";
 export type PickableForm = { id: string; name: string; formClass: string };
 
 // One scrolling Terms screen. Every change saves on its own; the one next action is Preview.
-export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms, locked }: {
+export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms, locked, defaults, defaultTitleCompany }: {
   id: string; initial: OfferTerms; titleCompanies: string[]; forms: PickableForm[];
+  /** The brokerage's computations, applied live as the agent types (the server applies them again on save). */
+  defaults: OfferDefaults; defaultTitleCompany: string | null;
   /** Terms only picked Uploaded forms ask for, keyed by form id. */
   miniTerms: Record<string, CatalogTerm[]>;
   locked: boolean;
@@ -27,7 +29,9 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
   const update = (patch: Partial<OfferTerms>) => {
     if (locked) return;
     setT((prev) => {
-      const next = enforceRules({ ...prev, ...patch });
+      // Whatever the agent types into is theirs from now on: computations stop moving it.
+      const touched = [...new Set([...prev.touched, ...Object.keys(patch).filter((k) => k !== "sales_price")])];
+      const next = enforceRules(applyBrokerageDefaults({ ...prev, ...patch, touched }, defaults, defaultTitleCompany));
       latest.current = next;
       return next;
     });
@@ -82,8 +86,10 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
       <Group title="Money">
         <Num label="Sales price" value={t.sales_price} onChange={(v) => update({ sales_price: v })} money required />
         <Row>
-          <Num label="Earnest money" value={t.earnest_money} onChange={(v) => update({ earnest_money: v })} money />
-          <Num label="Option fee" value={t.option_fee} onChange={(v) => update({ option_fee: v })} money />
+          <Num label="Earnest money" value={t.earnest_money} onChange={(v) => update({ earnest_money: v })} money
+            hint={!t.touched.includes("earnest_money") ? `${defaults.earnest_pct}% of price` : undefined} />
+          <Num label="Option fee" value={t.option_fee} onChange={(v) => update({ option_fee: v })} money
+            hint={!t.touched.includes("option_fee") ? "From the price" : undefined} />
         </Row>
         <Num label="Option period (days)" value={t.option_period_days} onChange={(v) => update({ option_period_days: v })} />
         <Field label="Financing" group>
@@ -128,6 +134,12 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
           <input className={inputCls} list="title-cos" value={t.title_company ?? ""} disabled={locked} onChange={(e) => update({ title_company: e.target.value || null })} />
           <datalist id="title-cos">{titleCompanies.map((c) => <option key={c} value={c} />)}</datalist>
         </Field>
+        <Field label="Owner's title policy paid by (Para 6A)" group>
+          <div className="flex gap-2">
+            <Chip on={t.title_policy_payer === "seller"} onClick={() => update({ title_policy_payer: "seller" })}>Seller</Chip>
+            <Chip on={t.title_policy_payer === "buyer"} onClick={() => update({ title_policy_payer: "buyer" })}>Buyer</Chip>
+          </div>
+        </Field>
         <Field label="Survey (Para 6C)" group>
           <div className="flex flex-col gap-2">
             {([["seller_existing", "Seller furnishes existing survey (T-47)"], ["buyer_new", "Buyer obtains a new survey"], ["seller_new", "Seller furnishes a new survey"]] as const).map(([v, l]) => (
@@ -138,6 +150,14 @@ export function OfferTermsEditor({ id, initial, titleCompanies, forms, miniTerms
           </div>
         </Field>
         {t.survey_option && <Num label="Survey (days)" value={t.survey_days} onChange={(v) => update({ survey_days: v })} />}
+        {t.survey_option === "seller_existing" && (
+          <Field label="If the existing survey isn't accepted, a new one is paid by" group>
+            <div className="flex gap-2">
+              <Chip on={t.survey_new_payer === "seller"} onClick={() => update({ survey_new_payer: "seller" })}>Seller</Chip>
+              <Chip on={t.survey_new_payer === "buyer"} onClick={() => update({ survey_new_payer: "buyer" })}>Buyer</Chip>
+            </div>
+          </Field>
+        )}
       </Group>
 
       <Group title="Addenda">

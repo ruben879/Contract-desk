@@ -2,35 +2,57 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Brokerage, Member } from "@/lib/context";
-import { emptyTerms, enforceRules, normalizeTerms, type OfferTerms } from "./terms";
+import { applyBrokerageDefaults, emptyTerms, enforceRules, normalizeDefaults, normalizeTerms, type OfferDefaults, type OfferTerms } from "./terms";
 import type { UploadedFormForRender } from "./render";
 import type { FieldMap } from "@/lib/forms/library";
 import type { P22Slot } from "@/lib/forms/registry";
 
+/**
+ * The brokerage's offer settings. Tolerant of migrations not yet run: anything missing falls back to
+ * the standard values (Clear Rock's), so the computations always work.
+ */
+export async function loadOfferDefaults(supabase: SupabaseClient, brokerageId: string) {
+  const { data: base } = await supabase.from("brokerages").select("default_title_company, default_buyer_comp_type, default_buyer_comp_value").eq("id", brokerageId).maybeSingle();
+  const { data: extra } = await supabase.from("brokerages").select("offer_defaults").eq("id", brokerageId).maybeSingle();
+  return {
+    titleCompany: (base?.default_title_company as string | null) ?? null,
+    compType: (base?.default_buyer_comp_type as OfferTerms["buyer_broker_comp_type"]) ?? null,
+    compValue: base?.default_buyer_comp_value == null ? null : Number(base.default_buyer_comp_value),
+    computations: normalizeDefaults((extra as { offer_defaults?: unknown } | null)?.offer_defaults) as OfferDefaults,
+  };
+}
+
+/** Computed and standard values into every Term the agent hasn't edited by hand. */
+export async function withBrokerageDefaults(supabase: SupabaseClient, brokerageId: string, t: OfferTerms) {
+  const d = await loadOfferDefaults(supabase, brokerageId);
+  return enforceRules(applyBrokerageDefaults(t, d.computations, d.titleCompany));
+}
+
 /** A new offer's Terms, starting from the profiles and (optionally) a buyer contact. Nothing invented. */
 export async function startingTerms(supabase: SupabaseClient, member: Member, brokerage: Brokerage, buyerContactId?: string | null): Promise<OfferTerms> {
   const t = emptyTerms();
-  const { data: defaults } = await supabase.from("brokerages").select("default_title_company, default_buyer_comp_type, default_buyer_comp_value").eq("id", brokerage.id).maybeSingle();
+  const d = await loadOfferDefaults(supabase, brokerage.id);
   const office = [brokerage.address_street, [brokerage.address_city, [brokerage.address_state ?? "TX", brokerage.address_zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")].filter(Boolean).join(", ");
   Object.assign(t, {
     buyer_broker_firm: brokerage.name, buyer_broker_license: brokerage.license_number, buyer_broker_address: office || null,
     buyer_agent_name: member.full_name, buyer_agent_license: member.license_number, buyer_agent_email: member.email, buyer_agent_phone: member.phone,
     buyer_supervisor_name: brokerage.broker_name, buyer_supervisor_license: brokerage.broker_license_number,
-    title_company: defaults?.default_title_company ?? null,
-    buyer_broker_comp_type: (defaults?.default_buyer_comp_type as OfferTerms["buyer_broker_comp_type"]) ?? null,
-    buyer_broker_comp_value: defaults?.default_buyer_comp_value == null ? null : Number(defaults.default_buyer_comp_value),
+    buyer_broker_comp_type: d.compType, buyer_broker_comp_value: d.compValue,
   });
   if (buyerContactId) {
     const { data: c } = await supabase.from("contacts").select("id, full_name, email, phone").eq("id", buyerContactId).maybeSingle();
     if (c) Object.assign(t, { buyers: [c.full_name], buyer_contact_ids: [c.id], buyer_notice_email: c.email, buyer_notice_phone: c.phone });
   }
-  return enforceRules(t);
+  return enforceRules(applyBrokerageDefaults(t, d.computations, d.titleCompany));
 }
 
 export async function loadOffer(supabase: SupabaseClient, id: string) {
   const { data } = await supabase.from("offers").select("*").eq("id", id).maybeSingle();
   if (!data) return null;
-  return { ...data, terms: normalizeTerms(data.terms) } as { id: string; brokerage_id: string; agent_member_id: string | null; status: string; terms: OfferTerms; last_exported_at: string | null; edited_since_export: boolean; executed_transaction_id: string | null };
+  // Until execution, the brokerage computations apply on every read, so Preview and Export always
+  // carry them (including offers saved before a computation existed). Executed offers stay as written.
+  const terms = data.status === "executed" ? normalizeTerms(data.terms) : await withBrokerageDefaults(supabase, data.brokerage_id, normalizeTerms(data.terms));
+  return { ...data, terms } as { id: string; brokerage_id: string; agent_member_id: string | null; status: string; terms: OfferTerms; last_exported_at: string | null; edited_since_export: boolean; executed_transaction_id: string | null };
 }
 
 export type LibraryFormRow = {

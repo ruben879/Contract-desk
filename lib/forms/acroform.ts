@@ -1,6 +1,6 @@
 import {
   concatTransformationMatrix, drawObject, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRadioGroup, PDFRef,
-  PDFStream, PDFTextField, popGraphicsState, pushGraphicsState, StandardFonts,
+  PDFHexString, PDFStream, PDFString, PDFTextField, popGraphicsState, pushGraphicsState, StandardFonts,
 } from "pdf-lib";
 
 // Low-level form handling. Render writes values into a form's existing blank (AcroForm) fields
@@ -79,9 +79,25 @@ export type FieldValues = Record<string, string | boolean>;
  * value where the field was; the form's own text and drawing are untouched.
  * Returns the names actually written, for the audit of what was filled.
  */
+/**
+ * How entered values print: Helvetica Bold Oblique in #0033CC, so a reader can tell at a glance what
+ * was typed into the form from the form's own text. Only the values change; the form's printed text,
+ * layout, pages and checkbox marks are untouched.
+ */
+export const FILL_FONT = StandardFonts.HelveticaBoldOblique;
+export const FILL_RGB = [0, 0.2, 0.8] as const; // #0033CC
+
+const COLOR_OP = /(?:\d*\.\d+|\d+)(?:\s+(?:\d*\.\d+|\d+)){0,3}\s+(?:g|rg|k)\b/g;
+/** Keep the field's font size (its "/Font size Tf"); replace only the color. */
+function blueAppearance(da: string | undefined) {
+  const base = (da ?? "/Helv 0 Tf").replace(COLOR_OP, "").trim() || "/Helv 0 Tf";
+  return `${base} ${FILL_RGB.join(" ")} rg`;
+}
+
 export async function fillForm(pdf: PDFDocument, values: FieldValues) {
   const form = pdf.getForm();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const font = await pdf.embedFont(FILL_FONT);
+  const formDA = form.acroForm.dict.lookupMaybe(PDFName.of("DA"), PDFString, PDFHexString)?.decodeText();
   const written: string[] = [];
   for (const [name, v] of Object.entries(values)) {
     if (v === "" || v === false || v == null) continue;
@@ -92,6 +108,9 @@ export async function fillForm(pdf: PDFDocument, values: FieldValues) {
       const text = String(v);
       if (max && text.length > max) throw new Error(`"${text}" is longer than field "${name}" allows (${max})`);
       f.setText(text);
+      const fieldDA = f.acroField.getDefaultAppearance() ?? formDA;
+      f.acroField.setDefaultAppearance(blueAppearance(fieldDA));
+      for (const w of f.acroField.getWidgets()) w.setDefaultAppearance(blueAppearance(w.getDefaultAppearance() ?? fieldDA));
     } else if (f instanceof PDFCheckBox) {
       if (v === true) f.check();
     } else if (f instanceof PDFRadioGroup) {

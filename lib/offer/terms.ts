@@ -42,8 +42,10 @@ export type OfferTerms = {
   possession: "closing_and_funding";
   // Title & survey
   title_company: string | null;
+  title_policy_payer: "seller" | "buyer" | null;   // Para 6A: owner's policy at whose expense
   survey_option: SurveyOption | null;
   survey_days: number | null;
+  survey_new_payer: "seller" | "buyer" | null;     // Para 6C(1): who pays a new survey if the existing one isn't accepted
   // Addenda
   addenda: OfferAddendum[];
   hoa_association: string | null;     // name and phone, as one line on the 36-11
@@ -66,6 +68,8 @@ export type OfferTerms = {
   extra: Record<string, string>;
   /** Blanks the agent marked Intentional on the Preview ("formId:fieldName"). */
   intentional_blanks: string[];
+  /** Term keys the agent has edited by hand. Brokerage computations never overwrite these. */
+  touched: string[];
 };
 
 export function emptyTerms(): OfferTerms {
@@ -75,7 +79,7 @@ export function emptyTerms(): OfferTerms {
     sales_price: null, earnest_money: null, option_fee: null, option_period_days: null,
     financing_type: null, financed_amount: null, loan_term_years: null, loan_rate_cap: null, fin_approval_days: null,
     closing_date: null, possession: "closing_and_funding",
-    title_company: null, survey_option: null, survey_days: null,
+    title_company: null, title_policy_payer: null, survey_option: null, survey_days: null, survey_new_payer: null,
     addenda: [], hoa_association: null, hoa_info_days: null, hoa_fee_cap: null,
     appraisal_option: null, appraisal_value: null, appraisal_days: null, uploaded_forms: [],
     buyer_notice_address: null, buyer_notice_phone: null, buyer_notice_email: null,
@@ -84,7 +88,7 @@ export function emptyTerms(): OfferTerms {
     buyer_agent_name: null, buyer_agent_license: null, buyer_agent_email: null, buyer_agent_phone: null,
     buyer_supervisor_name: null, buyer_supervisor_license: null,
     buyer_broker_comp_type: null, buyer_broker_comp_value: null,
-    extra: {}, intentional_blanks: [],
+    extra: {}, intentional_blanks: [], touched: [],
   };
 }
 
@@ -94,6 +98,8 @@ export function normalizeTerms(raw: unknown): OfferTerms {
   const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const out = { ...base } as Record<string, unknown>;
   for (const k of Object.keys(base)) if (k in src && src[k] !== undefined) out[k] = src[k];
+  // Saved before hand-edits were tracked: a value already there was the agent's, so keep it.
+  if (!Array.isArray(src.touched)) out.touched = COMPUTED_KEYS.filter((k) => src[k] != null && src[k] !== "");
   return enforceRules(out as OfferTerms);
 }
 
@@ -242,3 +248,63 @@ export function closingParts(iso: string | null): { monthDay: string; yy: string
 
 
 export const OFFER_STATUS_LABEL: Record<string, string> = { draft_offer: "Draft", out_for_signature: "Out for signature", executed: "Executed" };
+
+// ---------- Brokerage computations ----------
+// Standard values a brokerage writes on every offer. They prefill, stay editable, and stop moving
+// once the agent edits that Term by hand (OfferTerms.touched).
+
+export type OfferDefaults = {
+  earnest_pct: number;          // earnest money = this % of the sales price...
+  earnest_round: number;        // ...rounded down to this step
+  option_tier1_max: number; option_tier1_fee: number;   // fee up to and including tier1_max
+  option_tier2_max: number; option_tier2_fee: number;   // above tier1_max, up to and including tier2_max
+  option_tier3_fee: number;                             // above tier2_max
+  option_period_days: number;
+};
+/** Clear Rock's values; also what a brokerage gets until it changes them. */
+export const STANDARD_OFFER_DEFAULTS: OfferDefaults = {
+  earnest_pct: 1, earnest_round: 100,
+  option_tier1_max: 300000, option_tier1_fee: 100, option_tier2_max: 400000, option_tier2_fee: 150, option_tier3_fee: 250,
+  option_period_days: 10,
+};
+/** Fixed starting choices (not brokerage settings in this round). */
+export const STANDARD_CHOICES = { title_policy_payer: "seller", survey_option: "seller_existing", survey_days: 5, survey_new_payer: "buyer" } as const;
+
+const COMPUTED_KEYS = ["earnest_money", "option_fee", "option_period_days", "title_company", "title_policy_payer", "survey_option", "survey_days", "survey_new_payer"] as const;
+
+export function normalizeDefaults(raw: unknown): OfferDefaults {
+  const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const out = { ...STANDARD_OFFER_DEFAULTS };
+  for (const k of Object.keys(out) as (keyof OfferDefaults)[]) {
+    const v = Number(src[k]);
+    if (src[k] != null && src[k] !== "" && Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  return out;
+}
+
+/** 1% of $135,000 is $1,350, rounded down to the $100 step: $1,300. */
+export function computedEarnest(price: number, d: OfferDefaults) {
+  const step = d.earnest_round > 0 ? d.earnest_round : 1;
+  return Math.floor((price * d.earnest_pct) / 100 / step + 1e-9) * step;
+}
+export function computedOptionFee(price: number, d: OfferDefaults) {
+  return price <= d.option_tier1_max ? d.option_tier1_fee : price <= d.option_tier2_max ? d.option_tier2_fee : d.option_tier3_fee;
+}
+
+/**
+ * Fill the computed and standard values into every Term the agent hasn't edited by hand.
+ * Earnest money and option fee follow the price; the rest fill only while empty.
+ */
+export function applyBrokerageDefaults(t: OfferTerms, d: OfferDefaults, brokerageTitleCompany?: string | null): OfferTerms {
+  const free = (k: keyof OfferTerms) => !t.touched.includes(k);
+  const out = { ...t };
+  if (free("earnest_money")) out.earnest_money = t.sales_price == null ? null : computedEarnest(t.sales_price, d);
+  if (free("option_fee")) out.option_fee = t.sales_price == null ? null : computedOptionFee(t.sales_price, d);
+  if (free("option_period_days") && out.option_period_days == null) out.option_period_days = d.option_period_days;
+  if (free("title_company") && !out.title_company && brokerageTitleCompany) out.title_company = brokerageTitleCompany;
+  if (free("title_policy_payer") && out.title_policy_payer == null) out.title_policy_payer = STANDARD_CHOICES.title_policy_payer;
+  if (free("survey_option") && out.survey_option == null) out.survey_option = STANDARD_CHOICES.survey_option;
+  if (free("survey_days") && out.survey_days == null && out.survey_option === STANDARD_CHOICES.survey_option) out.survey_days = STANDARD_CHOICES.survey_days;
+  if (free("survey_new_payer") && out.survey_new_payer == null && out.survey_option === "seller_existing") out.survey_new_payer = STANDARD_CHOICES.survey_new_payer;
+  return out;
+}

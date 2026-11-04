@@ -8,6 +8,8 @@ import { AddForm } from "@/components/FormLibrary";
 import { loadLibrary } from "@/lib/offer/server";
 import { BUNDLED_FORMS, P22_SLOTS } from "@/lib/forms/registry";
 import { TXR_ACK_TEXT, mappable, unmappedCount } from "@/lib/forms/library";
+import { STANDARD_OFFER_DEFAULTS, normalizeDefaults, type OfferDefaults } from "@/lib/offer/terms";
+import { loadOfferDefaults } from "@/lib/offer/server";
 
 async function saveDefaults(fd: FormData) {
   "use server";
@@ -21,6 +23,12 @@ async function saveDefaults(fd: FormData) {
     default_buyer_comp_type: type === "percent" || type === "amount" ? type : null,
     default_buyer_comp_value: type && value ? Number(value.replace(/[$,%\s]/g, "")) || null : null,
   }).eq("id", brokerage.id);
+  // Computations live in their own column (migration 0010); saved separately so the fields above
+  // still save if that migration hasn't run yet.
+  const n = (k: keyof OfferDefaults) => { const v = s(k); return v == null ? null : Number(v.replace(/[$,%\s]/g, "")); };
+  const next = normalizeDefaults(Object.fromEntries((Object.keys(STANDARD_OFFER_DEFAULTS) as (keyof OfferDefaults)[]).map((k) => [k, n(k)])));
+  if (next.option_tier2_max < next.option_tier1_max) next.option_tier2_max = next.option_tier1_max;
+  await supabase.from("brokerages").update({ offer_defaults: next }).eq("id", brokerage.id);
   revalidatePath("/settings/forms");
 }
 
@@ -28,10 +36,18 @@ async function saveDefaults(fd: FormData) {
 export default async function FormsSettings() {
   const { supabase, brokerage, isBrokerOrStaff } = await requireMember();
   if (!isBrokerOrStaff) redirect("/");
-  const [library, { data: d }] = await Promise.all([
+  const [library, { data: d }, { computations: c }] = await Promise.all([
     loadLibrary(supabase),
     supabase.from("brokerages").select("default_title_company, default_buyer_comp_type, default_buyer_comp_value").eq("id", brokerage.id).maybeSingle(),
+    loadOfferDefaults(supabase, brokerage.id),
   ]);
+  const numIn = (name: keyof OfferDefaults, label: string, prefix?: string) => (
+    <label className="block"><span className="mb-1 block text-[14px] font-medium">{label}</span>
+      <span className="relative block">
+        {prefix && <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">{prefix}</span>}
+        <input name={name} defaultValue={c[name].toLocaleString("en-US")} inputMode="decimal" className={`${inputCls} ${prefix ? "pl-7" : ""}`} />
+      </span></label>
+  );
   const slots = P22_SLOTS.map((s) => ({ key: s.key, label: s.label }));
 
   return (
@@ -51,7 +67,19 @@ export default async function FormsSettings() {
               </select>
               <input name="default_buyer_comp_value" defaultValue={d?.default_buyer_comp_value ?? ""} inputMode="decimal" className={inputCls} />
             </div></div>
-          <p className="text-[13.5px] text-muted">New offers start with these. Agents can change them on each offer.</p>
+          <h3 className="pt-2 font-semibold">Earnest money</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {numIn("earnest_pct", "Percent of price")}
+            {numIn("earnest_round", "Round down to the nearest", "$")}
+          </div>
+          <h3 className="pt-2 font-semibold">Option fee</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {numIn("option_tier1_max", "Price up to", "$")}{numIn("option_tier1_fee", "Fee", "$")}
+            {numIn("option_tier2_max", "Then up to", "$")}{numIn("option_tier2_fee", "Fee", "$")}
+            <div className="self-end pb-3 text-[15px] text-muted">Above that</div>{numIn("option_tier3_fee", "Fee", "$")}
+          </div>
+          {numIn("option_period_days", "Option period (days)")}
+          <p className="text-[13.5px] text-muted">New offers fill these in from the price and keep them in step as the price changes, until the agent types their own. Every offer also starts with the owner's title policy at Seller's expense and the Seller's existing survey within 5 days (Buyer pays for a new one if it isn't accepted). All of it stays editable on each offer.</p>
           <button className="inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-[15px] font-medium text-white">Save defaults</button>
         </form>
       </Card>

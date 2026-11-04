@@ -4,7 +4,7 @@ import { requireMember } from "@/lib/context";
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui";
 import { OfferTermsEditor } from "@/components/OfferTermsEditor";
-import { loadLibrary, loadOffer } from "@/lib/offer/server";
+import { loadLibrary, loadOffer, loadOfferDefaults } from "@/lib/offer/server";
 import { miniFieldTerms, usableForms } from "@/lib/forms/library";
 import { OFFER_STATUS_LABEL as STATUS_LABEL, addressLine } from "@/lib/offer/terms";
 import { PacketDownload } from "@/components/OfferPackets";
@@ -16,14 +16,14 @@ export default async function OfferTermsPage({ params }: { params: Promise<{ id:
   const offer = await loadOffer(supabase, id);
   if (!offer) notFound();
 
-  const [library, { data: titleContacts }, { data: defaults }, { data: packets }] = await Promise.all([
+  const [library, { data: titleContacts }, defaults, { data: packets }] = await Promise.all([
     loadLibrary(supabase),
     supabase.from("contacts").select("full_name").eq("type", "title_company").order("full_name").limit(50),
-    supabase.from("brokerages").select("default_title_company").eq("id", brokerage.id).maybeSingle(),
+    loadOfferDefaults(supabase, brokerage.id),
     supabase.from("offer_packets").select("id, version, file_name, exported_at").eq("offer_id", id).order("version", { ascending: false }),
   ]);
   const forms = usableForms(library);
-  const titleCompanies = [...new Set([defaults?.default_title_company, ...(titleContacts ?? []).map((c) => c.full_name)].filter(Boolean) as string[])];
+  const titleCompanies = [...new Set([defaults.titleCompany, ...(titleContacts ?? []).map((c) => c.full_name)].filter(Boolean) as string[])];
   const miniTerms = Object.fromEntries(forms.map((f) => [f.id, miniFieldTerms([f.current!.field_map])]));
 
   return (
@@ -46,7 +46,7 @@ export default async function OfferTermsPage({ params }: { params: Promise<{ id:
       )}
       <OfferTermsEditor id={id} initial={offer.terms} titleCompanies={titleCompanies}
         forms={forms.map((f) => ({ id: f.id, name: f.display_name, formClass: f.form_class }))} miniTerms={miniTerms}
-        locked={offer.status === "executed"} />
+        locked={offer.status === "executed"} defaults={defaults.computations} defaultTitleCompany={defaults.titleCompany} />
     </AppShell>
   );
 }

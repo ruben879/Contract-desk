@@ -96,9 +96,14 @@ const MAP_20_19: MapEntry[] = [
   { field: "the Title Company and Buyers lenders Check one box only", term: "option_period_days", label: "Para 5B: Option period days", value: (t) => num(t.option_period_days), usual: always },
   // 6A. Title
   { field: "insurance Title Policy issued by", term: "title_company", label: "Para 6A: Title Company", value: (t) => t.title_company, usual: always },
+  // Boxes identified by position beside the printed "Seller's" / "Buyer's" (page 2, y 344; page 3, y 640).
+  { field: "Sellers_2", term: "title_policy_payer = seller", label: "Para 6A: Owner's policy at Seller's expense", value: (t) => t.title_policy_payer === "seller" },
+  { field: "Buyers expense no later", term: "title_policy_payer = buyer", label: "Para 6A: Owner's policy at Buyer's expense", value: (t) => t.title_policy_payer === "buyer" },
   // 6C. Survey (choice from the Terms screen)
   { field: "Buyer", term: "survey_option = seller_existing", label: "Para 6C(1): Seller furnishes existing survey", value: (t) => t.survey_option === "seller_existing" },
   { field: "than 3 days prior to Closing Date", term: "survey_days", label: "Para 6C(1): days", value: (t) => (t.survey_option === "seller_existing" ? num(t.survey_days) : null), usual: (t) => t.survey_option === "seller_existing" },
+  { field: "Within one", term: "survey_new_payer = seller", label: "Para 6C(1): New survey at Seller's expense", value: (t) => t.survey_option === "seller_existing" && t.survey_new_payer === "seller" },
+  { field: "Within two", term: "survey_new_payer = buyer", label: "Para 6C(1): New survey at Buyer's expense", value: (t) => t.survey_option === "seller_existing" && t.survey_new_payer === "buyer" },
   { field: "Within three", term: "survey_option = buyer_new", label: "Para 6C(2): Buyer obtains new survey", value: (t) => t.survey_option === "buyer_new" },
   { field: "3 days prior", term: "survey_days", label: "Para 6C(2): days", value: (t) => (t.survey_option === "buyer_new" ? num(t.survey_days) : null), usual: (t) => t.survey_option === "buyer_new" },
   { field: "Within four", term: "survey_option = seller_new", label: "Para 6C(3): Seller furnishes new survey", value: (t) => t.survey_option === "seller_new" },
