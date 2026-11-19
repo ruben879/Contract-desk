@@ -8,13 +8,18 @@ const hasOrMissing = (k: Parameters<typeof has>[0]) => (c: DealContext) => has(k
 
 export type SlotRule = Conditions & { key: string; label: string; many?: boolean; hint?: string };
 
+// Rules with no `stages` are contract-stage slots. Listing deals show only the slots that name "listing".
+const both = ["listing", "contract"] as ("listing" | "contract")[];
+
 export const SLOT_RULES: SlotRule[] = [
+  { key: "listing_agreement", label: "Listing agreement", stages: ["listing"] },
+  { key: "mortgage_info", label: "Request for Mortgage Information", stages: ["listing"], when: (c) => c.listing_mortgage_info === true },
   { key: "contract", label: "Executed contract" },
   { key: "third_party_financing", label: "Third Party Financing Addendum", when: hasOrMissing("third_party_financing") },
   { key: "hoa_addendum", label: "HOA addendum", when: hasOrMissing("hoa") },
   { key: "lead_based_paint", label: "Lead-based paint addendum", when: hasOrMissing("lead_based_paint") },
   { key: "other_addenda", label: "Other addenda", many: true },
-  { key: "sellers_disclosure", label: "Seller's Disclosure", when: (c) => c.seller_disclosure !== "not_required" },
+  { key: "sellers_disclosure", label: "Seller's Disclosure", stages: both, when: (c) => c.seller_disclosure !== "not_required" },
   { key: "amendments", label: "Amendments", many: true },
   { key: "earnest_receipt", label: "Earnest money and option fee receipts", many: true },
   { key: "hoa_documents", label: "HOA documents and resale certificate", many: true, when: has("hoa") },
@@ -23,7 +28,7 @@ export const SLOT_RULES: SlotRule[] = [
   { key: "survey", label: "Survey or T-47 affidavit", many: true },
   { key: "lender_documents", label: "Lender documents", many: true, when: has("third_party_financing") },
   { key: "settlement_statement", label: "Settlement statement" },
-  { key: "other", label: "Other documents", many: true },
+  { key: "other", label: "Other documents", many: true, stages: both },
 ];
 
 export const SLOT_KEYS = SLOT_RULES.map((s) => s.key);

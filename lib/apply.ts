@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { computeDeadlines, diffDeadlines, type DeadlineRule } from "@/lib/deadlines/compute";
 import { buildChecklist, MERGED_INTO } from "@/lib/checklist/rules";
 import { diffTerms, termsFromTx, type Terms } from "@/lib/terms";
+import { isListingTask } from "@/lib/checklist/listing";
+import { listingFromTx, type ListingFacts, type Stage } from "@/lib/stage";
 
 export type ContactRow = { role: string; full_name: string; company: string | null; email: string | null; phone: string | null };
 
@@ -19,6 +21,8 @@ export async function applyConfirmedTerms(opts: {
   terms: Terms;
   agentMemberId?: string | null;   // undefined = leave as is
   contacts?: ContactRow[];         // undefined = leave People alone (amendments)
+  stage?: Stage;                   // undefined = leave as is (lib/stage.ts nextStage decides it)
+  listing?: ListingFacts;          // undefined = leave the listing facts as they are
   event: { kind: "confirmed" | "edited" | "amendment_confirmed"; summary?: string; documentIds?: string[] };
 }) {
   const { supabase, transactionId: id, userId, terms } = opts;
@@ -26,20 +30,28 @@ export async function applyConfirmedTerms(opts: {
   if (txErr || !tx) throw new Error("Deal not found.");
   const before = termsFromTx(tx);
   const now = new Date().toISOString();
+  // The first confirm sets the stage. After that a listing can only move to contract, and a
+  // contract deal never goes back to listing, whatever the caller asks.
+  const stageBefore: Stage | null = tx.confirmed_at ? (tx.stage === "listing" ? "listing" : "contract") : null;
+  const stage: Stage = stageBefore === "contract" ? "contract" : opts.stage ?? stageBefore ?? "contract";
+  const promoted = stageBefore === "listing" && stage === "contract";
+  const listing = opts.listing ?? listingFromTx(tx);
 
   // 1. Terms.
   const { error } = await supabase.from("transactions").update({
     ...terms,
     property_state: terms.property_state ?? "TX",
+    ...(stage !== (tx.stage ?? "contract") ? { stage } : {}),
+    ...(opts.listing !== undefined ? opts.listing : {}),
     ...(opts.agentMemberId !== undefined ? { agent_member_id: opts.agentMemberId } : {}),
     status: tx.status === "closed" || tx.status === "cancelled" ? tx.status : "active",
     confirmed_at: now, confirmed_by: userId, updated_at: now,
   }).eq("id", id);
   if (error) throw new Error(error.message);
 
-  // 2. Deadlines: recompute the full chain from the brokerage's rules.
+  // 2. Deadlines: recompute the full chain from the brokerage's rules. A listing has no contract, so no contract dates.
   const { data: rules } = await supabase.from("deadline_rules").select("*").eq("brokerage_id", tx.brokerage_id);
-  const { deadlines } = computeDeadlines((rules ?? []) as DeadlineRule[], terms);
+  const { deadlines } = stage === "listing" ? { deadlines: [] } : computeDeadlines((rules ?? []) as DeadlineRule[], terms);
   const { data: oldDeadlines } = await supabase.from("deadlines").select("key, label, due_date, due_time").eq("transaction_id", id);
   if (deadlines.length) {
     const { error: dErr } = await supabase.from("deadlines").upsert(
@@ -66,7 +78,8 @@ export async function applyConfirmedTerms(opts: {
   }
   if (retired.length) await supabase.from("checklist_items").delete().eq("transaction_id", id).in("rule_key", retired.map((r) => r.rule_key));
   const oldItems = (rawItems ?? []).filter((i) => !MERGED_INTO[i.rule_key]);
-  const list = buildChecklist({ side: terms.side, addenda: terms.addenda, financing_type: terms.financing_type, seller_disclosure: terms.seller_disclosure, missing_docs: terms.missing_docs });
+  const list = buildChecklist({ side: terms.side, addenda: terms.addenda, financing_type: terms.financing_type, seller_disclosure: terms.seller_disclosure, missing_docs: terms.missing_docs,
+    ...(stage === "listing" ? { stage, listing_mortgage_info: listing.listing_mortgage_info } : {}) });
   await supabase.from("checklist_items").upsert(
     list.map((i) => ({ ...i, brokerage_id: tx.brokerage_id, transaction_id: id,
       completed_at: i.status === "done" ? now : null, completed_by: i.status === "done" ? userId : null })),
@@ -82,7 +95,8 @@ export async function applyConfirmedTerms(opts: {
     }
   }
   const applies = new Set(list.map((i) => i.rule_key));
-  const gone = oldItems.filter((i) => i.status === "open" && !applies.has(i.rule_key));
+  // Listing tasks carry over when the deal goes under contract: they're never dropped by the contract checklist.
+  const gone = oldItems.filter((i) => i.status === "open" && !applies.has(i.rule_key) && !(stage === "contract" && isListingTask(i.rule_key)));
   // A "get this in the file" task whose document is now attached is finished, not dropped.
   const arrived = gone.filter((i) => i.rule_key.startsWith("missing_") && terms.addenda.includes(i.rule_key.slice("missing_".length) as never));
   const drop = gone.filter((i) => !arrived.includes(i));
@@ -100,12 +114,14 @@ export async function applyConfirmedTerms(opts: {
   const shifts = diffDeadlines(oldDeadlines ?? [], deadlines).filter((s) => s.change !== "same");
   await supabaseAdmin().from("transaction_events").insert({
     brokerage_id: tx.brokerage_id, transaction_id: id, kind: opts.event.kind, actor: userId,
-    summary: opts.event.summary ?? (opts.event.kind === "confirmed" ? "Contract details confirmed" : "Deal details edited"),
-    changes: { fields: t.fields, addenda: t.addenda, side: t.side, deadlines: shifts, tasks },
+    summary: [promoted ? "Executed contract added: moved from Listing to Under contract" : null,
+      opts.event.summary ?? (opts.event.kind === "confirmed" ? (stage === "listing" ? "Listing details confirmed" : "Contract details confirmed") : "Deal details edited")]
+      .filter(Boolean).join(". "),
+    changes: { fields: t.fields, addenda: t.addenda, side: t.side, deadlines: shifts, tasks, ...((promoted || stage === "listing") && stage !== stageBefore ? { stage: { before: stageBefore, after: stage } } : {}) },
     document_ids: opts.event.documentIds ?? [],
   });
 
-  return { shifts, tasks };
+  return { shifts, tasks, stage, promoted };
 }
 
 async function syncContacts(supabase: SupabaseClient, brokerageId: string, txId: string, userId: string, rows: ContactRow[]) {

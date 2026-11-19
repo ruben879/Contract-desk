@@ -8,6 +8,7 @@ import { DEADLINE_DISCLAIMER } from "@/components/DatePreview";
 import { dealStatus, GROUP_LABEL, taskTiming, type TaskGroup } from "@/lib/deal-status";
 import { slotsFor, SLOT_RULES } from "@/lib/slots";
 import { termsFromTx } from "@/lib/terms";
+import { listingFromTx } from "@/lib/stage";
 import { formatDay, formatShort, formatTime } from "@/lib/dates";
 import { displayError } from "@/lib/extract/errors";
 import { computeDeadlines, type DeadlineRule } from "@/lib/deadlines/compute";
@@ -58,7 +59,10 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const dueOf = new Map((deadlines ?? []).map((d) => [d.key, d]));
   // Terms the contract leaves blank: no date, flagged instead. (Dates already saved stay as saved until the next confirm.)
   const terms = termsFromTx(tx);
-  const attention = computeDeadlines(rules, terms).skipped.filter((s) => s.kind === "unresolved" && !dueOf.has(s.key));
+  const isListing = tx.stage === "listing";
+  const listing = listingFromTx(tx);
+  // A listing has no contract, so no contract dates to flag.
+  const attention = isListing ? [] : computeDeadlines(rules, terms).skipped.filter((s) => s.kind === "unresolved" && !dueOf.has(s.key));
   const attentionOf = new Map(attention.map((a) => [a.key, a]));
 
   const nameOf = (mid: string) => { const m = team.find((t) => t.id === mid); return m ? m.full_name || m.email : null; };
@@ -67,12 +71,17 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const unread = new Set(unreadMentions);
 
   // Where it stands: one line.
-  const status = dealStatus({ status: tx.status, today, deadlines: deadlines ?? [] });
+  const status = dealStatus({ status: tx.status, today, deadlines: deadlines ?? [], stage: tx.stage, listingExpires: listing.listing_expiration_date });
   const side = tx.side === "both" ? "both sides" : tx.side === "buyer" ? "buyer side" : tx.side === "seller" ? "seller side" : null;
   const statusLine = [status.label, side].filter(Boolean).join(", ");
   const address2 = [tx.property_city, [tx.property_state, tx.property_zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const closing = dueOf.get("closing")?.due_date ?? tx.closing_date;
-  const facts = [tx.sales_price ? money(Number(tx.sales_price)) : null, closing ? `Closes ${formatDay(closing)}` : null].filter(Boolean).join(" · ");
+  const sellers = (links ?? []).filter((l: any) => l.role === "seller").map((l: any) => l.contacts.full_name);
+  const facts = isListing
+    ? [listing.list_price != null ? `List price ${money(listing.list_price)}` : null,
+       listing.listing_start_date && listing.listing_expiration_date ? `Listed ${formatShort(listing.listing_start_date)} to ${formatShort(listing.listing_expiration_date)}`
+         : listing.listing_expiration_date ? `Expires ${formatShort(listing.listing_expiration_date)}` : null].filter(Boolean).join(" · ")
+    : [tx.sales_price ? money(Number(tx.sales_price)) : null, closing ? `Closes ${formatDay(closing)}` : null].filter(Boolean).join(" · ");
 
   // What needs me next: one focus card for the single next task (not repeated below), then the
   // rest by when: Late, Coming up, Waiting on paper (resolved by an upload), Whenever (the
@@ -92,7 +101,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
   const done = rows.filter((r) => r.group === "done").sort((a, b) => a.it.sort - b.it.sort);
   const reasonOf = (it: any) => (String(it.rule_key ?? "").startsWith("missing_") ? it.reason : null);
 
-  const slotList = slotsFor(terms, new Set(docs.map((d) => d.slot).filter((x): x is string => !!x)));
+  const slotList = slotsFor({ ...terms, stage: isListing ? "listing" : "contract", listing_mortgage_info: listing.listing_mortgage_info }, new Set(docs.map((d) => d.slot).filter((x): x is string => !!x)));
   const tone = { bad: "text-bad font-medium", warn: "text-warn font-medium", muted: "text-muted" } as const;
 
   return (
@@ -107,6 +116,7 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
         <h1 className="mt-1 text-[26px] font-semibold leading-tight tracking-[-0.01em]">{tx.property_street || "Address not set"}</h1>
         {address2 && <div className="text-muted">{address2}</div>}
         {facts && <div className="mt-1 font-medium">{facts}</div>}
+        {isListing && sellers.length > 0 && <div className="text-muted">Sellers: {sellers.join(", ")}</div>}
       </header>
 
       {amendment && (
@@ -182,33 +192,35 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
         </More>
       )}
 
-      <More id="dates" title="Key dates">
-        <ul className="divide-y divide-line rounded-card bg-card shadow-card">
-          {attention.map((a) => (
-            <li key={a.key} className="px-4 py-3">
-              <div className="flex justify-between gap-3">
-                <span className="font-medium">{a.label}</span>
-                <span className="shrink-0 font-medium text-warn">No date</span>
-              </div>
-              <div className="text-sm text-muted">{a.reason} If the contract or an amendment sets it, add it in <Link href={`/t/${id}/review`} className="text-brand">Edit details</Link>.</div>
-            </li>
-          ))}
-          {(deadlines ?? []).length === 0 && attention.length === 0 && <li className="px-4 py-3 text-sm text-muted">No dates yet. Add the effective date in Edit details.</li>}
-          {(deadlines ?? []).map((d) => (
-            <li key={d.id} className="px-4 py-3">
-              <div className="flex justify-between gap-3">
-                <span className="font-medium">{d.label}</span>
-                <span className="shrink-0 font-semibold">{formatShort(d.due_date)}{d.due_time ? <span className="font-normal text-muted">, {formatTime(d.due_time)}</span> : null}</span>
-              </div>
-              <div className="text-sm text-muted">From {d.contract_ref}. {d.calculation}.</div>
-            </li>
-          ))}
-        </ul>
-        {(deadlines ?? []).some((d) => d.needs_verification) && (
-          <p className="mt-2 text-sm font-medium text-warn">Some day counts haven't been verified in Settings yet.</p>
-        )}
-        <p className="mt-1 text-xs text-muted">{DEADLINE_DISCLAIMER}</p>
-      </More>
+      {!isListing && (
+        <More id="dates" title="Key dates">
+          <ul className="divide-y divide-line rounded-card bg-card shadow-card">
+            {attention.map((a) => (
+              <li key={a.key} className="px-4 py-3">
+                <div className="flex justify-between gap-3">
+                  <span className="font-medium">{a.label}</span>
+                  <span className="shrink-0 font-medium text-warn">No date</span>
+                </div>
+                <div className="text-sm text-muted">{a.reason} If the contract or an amendment sets it, add it in <Link href={`/t/${id}/review`} className="text-brand">Edit details</Link>.</div>
+              </li>
+            ))}
+            {(deadlines ?? []).length === 0 && attention.length === 0 && <li className="px-4 py-3 text-sm text-muted">No dates yet. Add the effective date in Edit details.</li>}
+            {(deadlines ?? []).map((d) => (
+              <li key={d.id} className="px-4 py-3">
+                <div className="flex justify-between gap-3">
+                  <span className="font-medium">{d.label}</span>
+                  <span className="shrink-0 font-semibold">{formatShort(d.due_date)}{d.due_time ? <span className="font-normal text-muted">, {formatTime(d.due_time)}</span> : null}</span>
+                </div>
+                <div className="text-sm text-muted">From {d.contract_ref}. {d.calculation}.</div>
+              </li>
+            ))}
+          </ul>
+          {(deadlines ?? []).some((d) => d.needs_verification) && (
+            <p className="mt-2 text-sm font-medium text-warn">Some day counts haven't been verified in Settings yet.</p>
+          )}
+          <p className="mt-1 text-xs text-muted">{DEADLINE_DISCLAIMER}</p>
+        </More>
+      )}
 
       <More id="docs" title="Documents">
         <DocumentSlots

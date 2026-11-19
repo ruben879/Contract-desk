@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { applyConfirmedTerms } from "@/lib/apply";
 import { ADDENDUM_KEYS, DISCLOSURE_STATUSES, FINANCING_TYPES, type AddendumKey } from "@/lib/addenda";
 import { TERM_KIND, TERM_LABEL, termsFromTx, type Terms } from "@/lib/terms";
+import { nextStage } from "@/lib/stage";
 
 const parsers = {
   money: z.preprocess((v) => (typeof v === "string" ? v.replace(/[$,\s]/g, "") : v), z.coerce.number().nonnegative()),
@@ -49,9 +50,13 @@ export async function confirmChanges(transactionId: string, extractionId: string
   // A signed Seller's Disclosure arriving means the buyer now has it.
   if (fd.getAll("add").includes("sellers_disclosure") && next.seller_disclosure !== "not_required" && !keys.includes("seller_disclosure")) next.seller_disclosure = "received";
 
+  // A listing moves under contract when the documents being confirmed include the executed contract.
+  const docs = ((ex.result as any)?.documents ?? []) as { kind: string }[];
+  const stage = tx.stage === "listing" ? nextStage({ current: "listing", firstConfirm: false, documents: docs }) : undefined;
+
   try {
     await applyConfirmedTerms({
-      supabase, transactionId, userId: user.id, terms: next,
+      supabase, transactionId, userId: user.id, terms: next, stage,
       event: { kind: "amendment_confirmed", summary: (ex.result as any)?.summary || "Changes from added documents confirmed", documentIds: ex.document_ids },
     });
   } catch (e) {

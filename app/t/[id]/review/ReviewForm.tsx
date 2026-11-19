@@ -61,7 +61,7 @@ const num = (s: FormDataEntryValue | null) => {
 };
 
 export function ReviewForm(props: {
-  id: string; confirmed: boolean; values: Record<string, unknown>; meta: Record<string, FieldMeta>;
+  id: string; stage: "listing" | "contract"; confirmed: boolean; values: Record<string, unknown>; meta: Record<string, FieldMeta>;
   extractedAddenda: Addendum[]; selectedAddenda: string[];
   missingOptions: string[]; missingSelected: string[];
   contacts: ContactDraft[]; warnings: string[];
@@ -73,6 +73,7 @@ export function ReviewForm(props: {
   extras?: React.ReactNode;
 }) {
   const { id, confirmed, values, meta } = props;
+  const listing = props.stage === "listing";
   const [state, action, pending] = useActionState<ConfirmState, FormData>(confirmTransaction.bind(null, id), undefined);
   const [contacts, setContacts] = useState<ContactDraft[]>(props.contacts);
   const v = (k: string) => (values[k] == null ? "" : String(values[k]));
@@ -81,7 +82,9 @@ export function ReviewForm(props: {
     option_period_days: num(v("option_period_days")), survey_days: num(v("survey_days")),
     hoa_info_days: num(v("hoa_info_days")), fin_approval_days: num(v("fin_approval_days")), addenda: props.selectedAddenda,
   });
-  const flagged = Object.values(meta).filter(needsLook).length;
+  // On a listing, only the fields shown count: the contract fields are blank on purpose.
+  const LISTING_SHOWN = ["property_street", "property_city", "property_state", "property_zip", "property_county", "legal_description", "list_price", "listing_start_date", "listing_expiration_date"];
+  const flagged = Object.entries(meta).filter(([k, m]) => (!listing || LISTING_SHOWN.includes(k)) && needsLook(m)).length;
   const found = new Map(props.extractedAddenda.map((a) => [a.key, a]));
   const F = (p: { name: string; label: string; type?: string; inputMode?: "decimal" | "numeric"; className?: string }) =>
     ({ ...p, value: v(p.name), meta: meta[p.name], confirmed });
@@ -95,12 +98,18 @@ export function ReviewForm(props: {
         hoa_info_days: num(fd.get("hoa_info_days")), fin_approval_days: num(fd.get("fin_approval_days")), addenda: fd.getAll("addenda").map(String),
       });
     }}>
+      <input type="hidden" name="stage" value={props.stage} />
       <h1 className="text-xl font-bold">{confirmed ? "Edit deal details" : "Check what we read"}</h1>
       <p className="mt-1 text-sm text-muted">
         {confirmed
           ? "Saving recalculates every dependent date and adds or removes checklist tasks. Finished tasks stay finished."
           : `Read from ${props.docCount} document${props.docCount === 1 ? "" : "s"}${props.hasScan ? " (includes a scan)" : ""}. ${flagged ? `${flagged} field${flagged === 1 ? "" : "s"} need a look.` : "Everything read cleanly. Give it a once-over."} Tap a page link to see where each value came from. Nothing is saved until you confirm.`}
       </p>
+      {listing && (
+        <p className="mt-2 rounded-xl bg-brand-soft px-3 py-2 text-sm">
+          This is a listing: a signed listing agreement and no purchase contract yet. When the executed contract comes in, add it to this deal and it moves under contract.
+        </p>
+      )}
 
       {props.extras}
 
@@ -145,95 +154,117 @@ export function ReviewForm(props: {
         </div>
         <FieldInput {...F({ name: "property_county", label: "County" })} />
         <FieldInput {...F({ name: "legal_description", label: "Legal description" })} />
-        <FieldInput {...F({ name: "contract_form", label: "Contract form" })} />
+        {!listing && <FieldInput {...F({ name: "contract_form", label: "Contract form" })} />}
       </Card>
 
-      <SectionTitle>Money</SectionTitle>
-      <Card className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <FieldInput {...F({ name: "sales_price", label: "Sales price", inputMode: "decimal" })} />
-          <FieldInput {...F({ name: "financed_amount", label: "Financed amount", inputMode: "decimal" })} />
-          <FieldInput {...F({ name: "earnest_money", label: "Earnest money", inputMode: "decimal" })} />
-          <FieldInput {...F({ name: "option_fee", label: "Option fee", inputMode: "decimal" })} />
-        </div>
-        <label className="block">
-          <span className="text-sm font-medium">Financing</span>
-          <select name="financing_type" defaultValue={v("financing_type")} className={cx(inputCls, "mt-1", !confirmed && needsLook(meta.financing_type) && "border-warn")}>
-            <option value="">Not sure</option>
-            {FINANCING_TYPES.map((f) => <option key={f} value={f}>{FINANCING_LABELS[f]}</option>)}
-          </select>
-          <Provenance m={meta.financing_type} label="Financing" confirmed={confirmed} />
-        </label>
-      </Card>
+      {listing ? (
+        <>
+          <SectionTitle>Listing</SectionTitle>
+          <Card className="space-y-4">
+            <FieldInput {...F({ name: "list_price", label: "List price", inputMode: "decimal" })} />
+            <div className="grid grid-cols-2 gap-3">
+              <FieldInput {...F({ name: "listing_start_date", label: "Listing starts", type: "date" })} />
+              <FieldInput {...F({ name: "listing_expiration_date", label: "Listing expires", type: "date" })} />
+            </div>
+            <label className="flex items-start gap-3 text-sm">
+              <input type="checkbox" name="listing_mortgage_info" value="yes" defaultChecked={values.listing_mortgage_info === true} className="mt-1 h-5 w-5 accent-[var(--color-brand)]" />
+              <span>
+                The listing agreement asks for the Request for Mortgage Information
+                <Provenance m={meta.listing_mortgage_info} label="Request for Mortgage Information" confirmed={confirmed} />
+              </span>
+            </label>
+          </Card>
+        </>
+      ) : (
+        <>
+          <SectionTitle>Money</SectionTitle>
+          <Card className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <FieldInput {...F({ name: "sales_price", label: "Sales price", inputMode: "decimal" })} />
+              <FieldInput {...F({ name: "financed_amount", label: "Financed amount", inputMode: "decimal" })} />
+              <FieldInput {...F({ name: "earnest_money", label: "Earnest money", inputMode: "decimal" })} />
+              <FieldInput {...F({ name: "option_fee", label: "Option fee", inputMode: "decimal" })} />
+            </div>
+            <label className="block">
+              <span className="text-sm font-medium">Financing</span>
+              <select name="financing_type" defaultValue={v("financing_type")} className={cx(inputCls, "mt-1", !confirmed && needsLook(meta.financing_type) && "border-warn")}>
+                <option value="">Not sure</option>
+                {FINANCING_TYPES.map((f) => <option key={f} value={f}>{FINANCING_LABELS[f]}</option>)}
+              </select>
+              <Provenance m={meta.financing_type} label="Financing" confirmed={confirmed} />
+            </label>
+          </Card>
 
-      <SectionTitle>Dates and day counts</SectionTitle>
-      <Card className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <FieldInput {...F({ name: "effective_date", label: "Effective date", type: "date" })} />
-          <FieldInput {...F({ name: "closing_date", label: "Closing date", type: "date" })} />
-          <FieldInput {...F({ name: "option_period_days", label: "Option period (days)", inputMode: "numeric" })} />
-          <FieldInput {...F({ name: "survey_days", label: "Survey (days)", inputMode: "numeric" })} />
-          {(dates.addenda.includes("hoa") || values.hoa_info_days != null) && (
-            <FieldInput {...F({ name: "hoa_info_days", label: "HOA information (days)", inputMode: "numeric" })} />
-          )}
-          {(dates.addenda.includes("third_party_financing") || values.fin_approval_days != null) && (
-            <FieldInput {...F({ name: "fin_approval_days", label: "Buyer approval (days)", inputMode: "numeric" })} />
-          )}
-        </div>
-        <p className="text-xs text-muted">A day count left blank in the contract stays blank here. The deal flags it as needing attention instead of guessing a date.</p>
-      </Card>
-      <div className="mt-3">
-        <div className="mb-1 text-sm font-medium">Deadlines these terms produce</div>
-        <DatePreview rules={props.rules} deal={dates} current={props.currentDeadlines} />
-      </div>
+          <SectionTitle>Dates and day counts</SectionTitle>
+          <Card className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <FieldInput {...F({ name: "effective_date", label: "Effective date", type: "date" })} />
+              <FieldInput {...F({ name: "closing_date", label: "Closing date", type: "date" })} />
+              <FieldInput {...F({ name: "option_period_days", label: "Option period (days)", inputMode: "numeric" })} />
+              <FieldInput {...F({ name: "survey_days", label: "Survey (days)", inputMode: "numeric" })} />
+              {(dates.addenda.includes("hoa") || values.hoa_info_days != null) && (
+                <FieldInput {...F({ name: "hoa_info_days", label: "HOA information (days)", inputMode: "numeric" })} />
+              )}
+              {(dates.addenda.includes("third_party_financing") || values.fin_approval_days != null) && (
+                <FieldInput {...F({ name: "fin_approval_days", label: "Buyer approval (days)", inputMode: "numeric" })} />
+              )}
+            </div>
+            <p className="text-xs text-muted">A day count left blank in the contract stays blank here. The deal flags it as needing attention instead of guessing a date.</p>
+          </Card>
+          <div className="mt-3">
+            <div className="mb-1 text-sm font-medium">Deadlines these terms produce</div>
+            <DatePreview rules={props.rules} deal={dates} current={props.currentDeadlines} />
+          </div>
 
-      <SectionTitle>Addenda and disclosures</SectionTitle>
-      <Card className="space-y-4">
-        <div className="space-y-2">
-          {ADDENDUM_KEYS.filter((k) => k !== "other").map((k) => {
-            const a = found.get(k);
-            return (
-              <div key={k} className="flex items-start gap-3">
-                <input id={`ad-${k}`} type="checkbox" name="addenda" value={k} defaultChecked={props.selectedAddenda.includes(k)} className="mt-1 h-5 w-5 accent-[var(--color-brand)]" />
-                <div className="text-sm">
-                  <label htmlFor={`ad-${k}`}>{ADDENDA[k]}</label>
-                  {a && (
-                    <div className="flex flex-wrap items-center gap-1 text-xs text-muted">
-                      {a.evidence === "checked_only" ? <Badge tone="warn">Checked in Para 22 but not attached</Badge> : "Found"}
-                      {a.form_number && <span>· {a.form_number}</span>}
-                      <ShowSource target={{ doc: a.doc, page: a.page, quote: a.form_number ?? a.name, box: null, label: ADDENDA[k] }} />
+          <SectionTitle>Addenda and disclosures</SectionTitle>
+          <Card className="space-y-4">
+            <div className="space-y-2">
+              {ADDENDUM_KEYS.filter((k) => k !== "other").map((k) => {
+                const a = found.get(k);
+                return (
+                  <div key={k} className="flex items-start gap-3">
+                    <input id={`ad-${k}`} type="checkbox" name="addenda" value={k} defaultChecked={props.selectedAddenda.includes(k)} className="mt-1 h-5 w-5 accent-[var(--color-brand)]" />
+                    <div className="text-sm">
+                      <label htmlFor={`ad-${k}`}>{ADDENDA[k]}</label>
+                      {a && (
+                        <div className="flex flex-wrap items-center gap-1 text-xs text-muted">
+                          {a.evidence === "checked_only" ? <Badge tone="warn">Checked in Para 22 but not attached</Badge> : "Found"}
+                          {a.form_number && <span>· {a.form_number}</span>}
+                          <ShowSource target={{ doc: a.doc, page: a.page, quote: a.form_number ?? a.name, box: null, label: ADDENDA[k] }} />
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+                );
+              })}
+            </div>
+            {props.missingOptions.length > 0 && (
+              <div className="rounded-xl border border-warn bg-warn-soft/50 p-3">
+                <div className="text-sm font-semibold text-warn">Referenced but not in the file</div>
+                <p className="text-xs text-muted">Each one you leave ticked becomes a task to get it in the file.</p>
+                <div className="mt-2 space-y-2">
+                  {props.missingOptions.map((k) => (
+                    <label key={k} className="flex items-start gap-3 text-sm">
+                      <input type="checkbox" name="missing_docs" value={k} defaultChecked={props.missingSelected.includes(k)} className="mt-1 h-5 w-5 accent-[var(--color-brand)]" />
+                      <span>
+                        {ADDENDA[k as AddendumKey]}
+                        <span className="block text-xs text-muted">{missingReason(k as AddendumKey)}. Goes in {SLOT_LABEL[slotForMissing(k as AddendumKey)]}.</span>
+                      </span>
+                    </label>
+                  ))}
                 </div>
               </div>
-            );
-          })}
-        </div>
-        {props.missingOptions.length > 0 && (
-          <div className="rounded-xl border border-warn bg-warn-soft/50 p-3">
-            <div className="text-sm font-semibold text-warn">Referenced but not in the file</div>
-            <p className="text-xs text-muted">Each one you leave ticked becomes a task to get it in the file.</p>
-            <div className="mt-2 space-y-2">
-              {props.missingOptions.map((k) => (
-                <label key={k} className="flex items-start gap-3 text-sm">
-                  <input type="checkbox" name="missing_docs" value={k} defaultChecked={props.missingSelected.includes(k)} className="mt-1 h-5 w-5 accent-[var(--color-brand)]" />
-                  <span>
-                    {ADDENDA[k as AddendumKey]}
-                    <span className="block text-xs text-muted">{missingReason(k as AddendumKey)}. Goes in {SLOT_LABEL[slotForMissing(k as AddendumKey)]}.</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-        <label className="block">
-          <span className="text-sm font-medium">Seller's Disclosure (Para 7B)</span>
-          <select name="seller_disclosure" defaultValue={v("seller_disclosure")} className={cx(inputCls, "mt-1")}>
-            {DISCLOSURE_STATUSES.map((s) => <option key={s} value={s}>{DISCLOSURE_LABELS[s]}</option>)}
-          </select>
-          <Provenance m={meta.seller_disclosure} label="Seller's Disclosure" confirmed={confirmed} />
-        </label>
-      </Card>
+            )}
+            <label className="block">
+              <span className="text-sm font-medium">Seller's Disclosure (Para 7B)</span>
+              <select name="seller_disclosure" defaultValue={v("seller_disclosure")} className={cx(inputCls, "mt-1")}>
+                {DISCLOSURE_STATUSES.map((s) => <option key={s} value={s}>{DISCLOSURE_LABELS[s]}</option>)}
+              </select>
+              <Provenance m={meta.seller_disclosure} label="Seller's Disclosure" confirmed={confirmed} />
+            </label>
+          </Card>
+        </>
+      )}
 
       <SectionTitle action={
         <button type="button" className="text-sm font-medium text-brand"
@@ -268,7 +299,7 @@ export function ReviewForm(props: {
       <div className="sticky bottom-0 -mx-4 mt-6 border-t border-line bg-paper/95 px-4 py-3 backdrop-blur">
         {state?.error && <p className="mb-2 text-sm text-bad">{state.error}</p>}
         <button disabled={pending} className="w-full rounded-xl bg-brand px-5 py-3.5 font-semibold text-white hover:bg-brand-dark disabled:opacity-50">
-          {pending ? "Saving..." : confirmed ? "Save changes" : "Confirm and build checklist"}
+          {pending ? "Saving..." : confirmed ? "Save changes" : listing ? "Confirm and build listing checklist" : "Confirm and build checklist"}
         </button>
       </div>
     </form>
