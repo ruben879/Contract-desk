@@ -152,7 +152,7 @@ export async function runAmendmentRead(
     const ordered = ids.map((id) => docs?.find((d) => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d);
     if (!ordered.length) throw new ReaderError("The documents to check weren't found. Add them again.");
 
-    const { changes, model } = await readChanges(base, await loadPdfs(db, ordered));
+    const { changes, model } = await readChanges(base, await loadPdfs(db, ordered), { listing: tx.stage === "listing" });
     await labelDocuments(db, ordered.map((d) => d.id), changes.documents);
 
     const somethingChanged = changes.changes.length > 0 || changes.addenda_added.length > 0 || changes.addenda_removed.length > 0;

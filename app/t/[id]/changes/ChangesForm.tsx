@@ -6,6 +6,7 @@ import { Badge, Card, SectionTitle, cx, inputCls } from "@/components/ui";
 import { ShowSource } from "@/components/SourceViewer";
 import { DatePreview } from "@/components/DatePreview";
 import { buildChecklist } from "@/lib/checklist/rules";
+import { isListingTask } from "@/lib/checklist/listing";
 import type { DeadlineRule } from "@/lib/deadlines/compute";
 import { DISCLOSURE_LABELS, DISCLOSURE_STATUSES, FINANCING_LABELS, FINANCING_TYPES, type AddendumKey } from "@/lib/addenda";
 import { addendumName, formatTerm, TERM_KIND, type ProposedChange, type Terms } from "@/lib/terms";
@@ -45,6 +46,8 @@ export function ChangesForm(props: {
   currentDeadlines: { key: string; label: string; due_date: string; due_time: string | null }[];
   currentTasks: { rule_key: string; title: string; status: string }[];
   routed: { from: string | null; subject: string | null; auto: boolean } | null;
+  listing?: boolean;    // the deal is in the Listing stage
+  promotes?: boolean;   // these documents include the executed contract: confirming moves it under contract
 }) {
   const { proposed, current } = props;
   const [state, action, pending] = useActionState<ChangesState, FormData>(confirmChanges.bind(null, props.transactionId, props.extractionId), undefined);
@@ -65,17 +68,21 @@ export function ChangesForm(props: {
   }, [current, proposed, use, vals, adds, rems, props.addendaAdded]);
 
   const tasks = useMemo(() => {
-    const now = buildChecklist({ side: next.side, addenda: next.addenda, financing_type: next.financing_type, seller_disclosure: next.seller_disclosure, missing_docs: next.missing_docs });
+    // Same stage rule as the save (lib/apply.ts): a listing stays a listing unless the contract is here,
+    // and listing tasks carry over once it's under contract.
+    const stillListing = props.listing && !props.promotes;
+    const now = buildChecklist({ side: next.side, addenda: next.addenda, financing_type: next.financing_type, seller_disclosure: next.seller_disclosure, missing_docs: next.missing_docs,
+      ...(stillListing ? { stage: "listing" as const } : {}) });
     const has = new Set(props.currentTasks.map((t) => t.rule_key));
     const keep = new Set(now.map((t) => t.rule_key));
-    const gone = props.currentTasks.filter((t) => t.status === "open" && !keep.has(t.rule_key));
+    const gone = props.currentTasks.filter((t) => t.status === "open" && !keep.has(t.rule_key) && !(!stillListing && isListingTask(t.rule_key)));
     const arrived = (t: { rule_key: string }) => t.rule_key.startsWith("missing_") && next.addenda.includes(t.rule_key.slice(8) as AddendumKey);
     return {
       added: now.filter((t) => !has.has(t.rule_key)).map((t) => t.title),
       removed: gone.filter((t) => !arrived(t)).map((t) => t.title),
       completed: gone.filter(arrived).map((t) => t.title),
     };
-  }, [next, props.currentTasks]);
+  }, [next, props.currentTasks, props.listing, props.promotes]);
 
   const nothing = proposed.length === 0 && props.addendaAdded.length === 0 && props.addendaRemoved.length === 0;
   const anySelected = Object.values(use).some(Boolean) || Object.values(adds).some(Boolean) || Object.values(rems).some(Boolean);
@@ -83,9 +90,11 @@ export function ChangesForm(props: {
   return (
     <form action={action}>
       <div className="text-sm text-muted">{props.address}</div>
-      <h1 className="text-xl font-bold">{nothing ? "Check this document" : "Confirm what changed"}</h1>
+      <h1 className="text-xl font-bold">{props.promotes ? "Confirm the contract" : nothing ? "Check this document" : "Confirm what changed"}</h1>
       <p className="mt-1 text-sm text-muted">
-        From {props.docNames.join(", ")}. {nothing
+        From {props.docNames.join(", ")}. {props.promotes
+          ? "This is the executed contract for this listing. Confirming moves the deal from Listing to Under contract and builds the contract checklist and dates. The listing tasks stay."
+          : nothing
           ? "We didn't find any change to price, dates, or terms. Look it over and confirm it belongs on this deal."
           : "Nothing changes on the deal until you confirm."}
       </p>

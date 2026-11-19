@@ -44,9 +44,16 @@ Next.js 15 (App Router) on Vercel, Supabase (Postgres, Auth, Storage), Claude fo
 
 - **Deadline day counts:** Settings > Deadline day counts (table `deadline_rules`). Every placeholder shows a "Day count not verified yet" badge on deals until you tick Verified.
 - **Holidays used for weekend/holiday roll:** `lib/deadlines/holidays.ts` (US federal for now).
-- **Checklist tasks and triggers:** `lib/checklist/rules.ts`, one list. **Document slots:** `lib/slots.ts`.
+- **Checklist tasks and triggers:** `lib/checklist/rules.ts`, one list. **Listing-stage tasks:** `lib/checklist/listing.ts`. **Document slots:** `lib/slots.ts`.
 - **What gets extracted:** `lib/extract/schema.ts`. Instructions to the reader: `lib/extract/read-contract.ts`.
-- **App name:** `lib/brand.ts`. **Colors:** top of `app/globals.css`.
+- **App name and home-screen icons:** `lib/brand.ts` (icons are the PNGs in `public/icons/`; swap the files to change the logo). **Colors:** top of `app/globals.css`.
+
+## Listing stage (Nov 19)
+
+- A deal started from a signed listing agreement (TXR-1101) with no purchase contract is in the **Listing** stage (`transactions.stage`, decided by `lib/stage.ts`). It shows "Listing" where the status shows, the list price as a list price, the listing start and expiration dates, and the sellers. No closing date, earnest money, or contract deadlines.
+- Its checklist is the listing list in `lib/checklist/listing.ts` (data, one row per task).
+- When an executed purchase contract is added and confirmed (Review changes), the deal moves to the contract stage: the contract checklist and deadlines build exactly as for a contract-started deal, and the listing tasks stay, done or carried over.
+- Contract-started deals are untouched: every existing deal is stage `contract` by default.
 
 ## Planned next
 

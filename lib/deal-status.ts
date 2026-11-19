@@ -8,10 +8,18 @@ export type Chip = { label: string; tone: Tone };
 export function dealStatus(input: {
   status: string; today: ISODate;
   deadlines: { key: string; due_date: ISODate }[];
+  stage?: string | null; listingExpires?: ISODate | null;
 }): Chip & { detail: string | null } {
   const { status, today } = input;
   if (status === "closed") return { label: "Closed", tone: "good", detail: null };
   if (status === "cancelled") return { label: "Cancelled", tone: "neutral", detail: null };
+  // A listing has no contract yet: never "under contract", no contract dates.
+  if (input.stage === "listing") {
+    const exp = input.listingExpires;
+    if (!exp) return { label: "Listing", tone: "brand", detail: null };
+    const n = daysBetween(today, exp);
+    return { label: "Listing", tone: n < 0 ? "bad" : "brand", detail: n < 0 ? `Expired ${formatShort(exp)}` : n === 0 ? "Expires today" : `Expires ${formatShort(exp)}` };
+  }
   const d = new Map(input.deadlines.map((x) => [x.key, x.due_date]));
   const option = d.get("option_end"), closing = d.get("closing");
   if (option && option >= today) {

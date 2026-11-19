@@ -2,6 +2,7 @@ import { applies, hasAddendum as has, isMissing, type Conditions, type DealConte
 import { ADDENDA, type AddendumKey } from "@/lib/addenda";
 import { MISSING_DOC_KEYS, missingReason, slotForMissing } from "@/lib/missing-docs";
 import { SLOT_LABEL } from "@/lib/slots";
+import { LISTING_TASKS } from "@/lib/checklist/listing";
 
 // Every checklist task lives here. Standard tasks apply to every deal on the listed sides;
 // triggered tasks appear only when their condition matches what's in the file.
@@ -15,7 +16,7 @@ export type ChecklistContext = DealContext;
 export type ChecklistRule = Conditions & {
   key: string;
   title: string;
-  section: "Contract" | "Option period" | "Financing" | "HOA" | "Disclosures" | "Title and survey" | "Closing" | "Other";
+  section: "Listing" | "Contract" | "Option period" | "Financing" | "HOA" | "Disclosures" | "Title and survey" | "Closing" | "Other";
   deadline_key?: string;
   reason?: string;                         // shown on triggered tasks
   startsDone?: boolean;                    // tasks the intake itself completes
@@ -89,6 +90,11 @@ export const CHECKLIST_RULES: ChecklistRule[] = [
     section: MISSING_SECTION[k] ?? "Contract",
     when: isMissing(k),
     reason: `${missingReason(k)}. File it under ${SLOT_LABEL[slotForMissing(k)]}.`,
+  })),
+
+  // ---- Listing stage (lib/checklist/listing.ts). Kept last so contract-deal ordering is unchanged. ----
+  ...LISTING_TASKS.map((t): ChecklistRule => ({
+    key: t.key, title: t.title, section: "Listing", stages: ["listing"], when: t.when, reason: t.reason, startsDone: t.startsDone,
   })),
 ];
 

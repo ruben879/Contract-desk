@@ -1,4 +1,5 @@
 import type { AddendumKey, DisclosureStatus, FinancingType } from "@/lib/addenda";
+import type { Stage } from "@/lib/stage";
 
 // One filter for everything that depends on what's in the file: checklist tasks and
 // document slots. A rule applies when every condition it names matches the deal.
@@ -20,15 +21,19 @@ export type DealContext = {
   seller_disclosure: DisclosureStatus | null;
   missing_docs?: AddendumKey[] | null;  // referenced by the contract but not in the file (lib/missing-docs.ts)
   contract_type?: ContractType | null; // Phase 2
+  stage?: Stage | null;                 // omitted = contract (every deal before Nov 19, 2026)
+  listing_mortgage_info?: boolean | null; // listing agreement asks for the Request for Mortgage Information
 };
 
 export type Conditions = {
   sides?: Side[];                          // omit = all sides
   contractTypes?: ContractType[];          // omit = all contract types
+  stages?: Stage[];                        // omit = contract stage only (the rules that existed before listings)
   when?: (c: DealContext) => boolean;      // omit = always
 };
 
 export function applies(rule: Conditions, ctx: DealContext): boolean {
+  if (!(rule.stages ?? ["contract"]).includes(ctx.stage ?? "contract")) return false;
   if (rule.sides && ctx.side && !rule.sides.includes(ctx.side)) return false;
   if (rule.contractTypes && (!ctx.contract_type || !rule.contractTypes.includes(ctx.contract_type))) return false;
   if (rule.when && !rule.when(ctx)) return false;

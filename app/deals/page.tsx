@@ -12,7 +12,7 @@ import { OFFER_STATUS_LABEL } from "@/lib/offer/terms";
 import { money } from "@/components/ui";
 
 type Row = {
-  id: string; status: string; property_street: string | null; property_city: string | null;
+  id: string; status: string; stage: string | null; listing_expiration_date: string | null; property_street: string | null; property_city: string | null;
   deadlines: { key: string; label: string; due_date: string }[];
   checklist_items: { title: string; status: string; deadline_key: string | null; sort: number }[];
   documents: { file_name: string }[];
@@ -27,7 +27,7 @@ export default async function Deals() {
 
   const [{ data }, { data: pending }, { data: offers }] = await Promise.all([
     supabase.from("transactions")
-      .select("id, status, property_street, property_city, deadlines(key, label, due_date), checklist_items(title, status, deadline_key, sort), documents(file_name)")
+      .select("id, status, stage, listing_expiration_date, property_street, property_city, deadlines(key, label, due_date), checklist_items(title, status, deadline_key, sort), documents(file_name)")
       .in("status", ["reading", "needs_review", "failed", "active"]).order("created_at", { ascending: false }).returns<Row[]>(),
     supabase.from("extractions").select("transaction_id").eq("kind", "amendment").eq("status", "ready"),
     // Offers not yet executed. Tolerates the offers table not existing yet (before migration 0009).
@@ -49,7 +49,8 @@ export default async function Deals() {
     else if (amended.has(r.id)) { line = "Review what changed"; tone = "warn"; rank = 1; }
     else if (late.length) {
       line = `Late: ${late[0].title}${late.length > 1 ? `, and ${late.length - 1} more` : ""}`; tone = "bad"; rank = 0; key = due.get(late[0].deadline_key!)!;
-    } else if (next) line = `${next.label} ${daysBetween(today, next.due_date) === 0 ? "today" : formatShort(next.due_date)}`;
+    } else if (r.stage === "listing") line = r.listing_expiration_date ? `Listing, expires ${formatShort(r.listing_expiration_date)}` : "Listing";
+    else if (next) line = `${next.label} ${daysBetween(today, next.due_date) === 0 ? "today" : formatShort(next.due_date)}`;
     else line = "No upcoming dates";
     return { id: r.id, address, line, tone, rank, key };
   }).sort((a, b) => a.rank - b.rank || a.key.localeCompare(b.key) || a.address.localeCompare(b.address));

@@ -12,6 +12,7 @@ import { deriveMissingDocs } from "@/lib/missing-docs";
 import { matchOpenOffer } from "@/lib/offer/server";
 import { writtenVsSigned, type ExtractedForMatch } from "@/lib/offer/match";
 import { WrittenVsSigned } from "@/components/WrittenVsSigned";
+import { nextStage, type Stage } from "@/lib/stage";
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -107,7 +108,17 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     fin_approval_days: pick("fin_approval_days", tx.fin_approval_days),
     seller_disclosure: pick("seller_disclosure", tx.seller_disclosure) ?? "unknown",
     side, agent_member_id: agentId,
+    list_price: pick("list_price", tx.list_price),
+    listing_start_date: pick("listing_start_date", tx.listing_start_date),
+    listing_expiration_date: pick("listing_expiration_date", tx.listing_expiration_date),
+    listing_mortgage_info: confirmed ? tx.listing_mortgage_info : ex?.listing_mortgage_info.value === "yes",
   };
+
+  // Listing or contract: a confirmed deal keeps its stage; a new one is a listing when its packet
+  // is a listing agreement with no purchase contract (lib/stage.ts).
+  const stage: Stage = confirmed
+    ? (tx.stage === "listing" ? "listing" : "contract")
+    : nextStage({ current: null, firstConfirm: true, documents: ex?.documents ?? [] });
 
   const meta: Record<string, FieldMeta> = {};
   if (ex) for (const [k, f] of Object.entries(ex)) {
@@ -156,7 +167,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!confirmed && ex) {
     const signed = signedForMatch(ex);
     const offer = await matchOpenOffer(supabase, signed);
-    if (offer) offerDiff = { offerId: offer.id, rows: writtenVsSigned(offer.terms, signed) };
+    if (offer && stage === "contract") offerDiff = { offerId: offer.id, rows: writtenVsSigned(offer.terms, signed) };
   }
 
   return (
@@ -164,6 +175,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       <SourceLayout docs={docs.map((d) => ({ name: d.file_name, url: d.url, scanned: !!d.is_scanned }))}>
         <ReviewForm
           id={id}
+          stage={stage}
           confirmed={confirmed}
           values={values}
           meta={meta}

@@ -23,6 +23,7 @@ Rules:
 - Handwritten or scanned pages: read them carefully; lower confidence when the handwriting is unclear.
 - List every addendum actually attached. Also list addenda checked in Para 22 but not attached, with evidence "checked_only".
 - Use warnings for conflicts (e.g. two different closing dates), missing initials, or strike-throughs that change terms.
+- A packet may be a signed listing agreement (e.g. Texas REALTORS Residential Real Estate Listing Agreement, TXR-1101) with no purchase contract. Classify that document as kind "listing_agreement". Report the sellers, property, list price, and listing start and expiration dates from it. Leave every purchase-contract field (sales price, financing, earnest money, option fee and days, effective date, closing date, buyers) out: a listing agreement does not set them, and a list price is never a sales price. Only an actual purchase contract form is kind "contract".
 
 ${LOCATION_RULES}
 
@@ -144,10 +145,13 @@ export async function triageDocuments(pdfs: PdfInput[]): Promise<{ triage: Triag
   return { triage: result, model };
 }
 
-export async function readChanges(current: Record<string, unknown>, pdfs: PdfInput[]): Promise<{ changes: ChangeResult; model: string }> {
+const LISTING_NOTE = `This deal is a LISTING: a signed listing agreement and no executed purchase contract yet, so its contract terms are blank. If the new documents include an executed purchase contract, classify it as kind "contract" and report every term it sets as a change (sales price, financing, earnest money, option fee and option period days, effective date, closing date, survey days, HOA and financing day counts, Seller's Disclosure status, title company, buyers), and list its addenda in addenda_added. A list price is never a sales price.`;
+
+export async function readChanges(current: Record<string, unknown>, pdfs: PdfInput[], opts: { listing?: boolean } = {}): Promise<{ changes: ChangeResult; model: string }> {
   const { result, model } = await callStructured(
     CHANGES_SYSTEM,
     [
+      ...(opts.listing ? [{ type: "text" as const, text: LISTING_NOTE }] : []),
       { type: "text", text: `CURRENT confirmed terms:\n${JSON.stringify(current, null, 2)}` },
       ...docBlocks(pdfs),
       { type: "text", text: "Record how these new documents change the deal. Report only real changes." },

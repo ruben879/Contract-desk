@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { applyConfirmedTerms } from "@/lib/apply";
 import { matchOpenOffer } from "@/lib/offer/server";
 import { ADDENDUM_KEYS, DISCLOSURE_STATUSES, FINANCING_TYPES, type AddendumKey } from "@/lib/addenda";
+import { STAGES } from "@/lib/stage";
 
 const blank = (v: unknown) => (v === "" || v == null ? null : v);
 const optStr = z.preprocess(blank, z.string().trim().nullable());
@@ -35,6 +36,10 @@ const Form = z.object({
   addenda: z.array(z.enum(ADDENDUM_KEYS as [AddendumKey, ...AddendumKey[]])),
   missing_docs: z.array(z.enum(ADDENDUM_KEYS as [AddendumKey, ...AddendumKey[]])),
   contacts: z.array(ContactRow),
+  // Listing stage. The stage is decided on the review page (lib/stage.ts) and guarded again in applyConfirmedTerms.
+  stage: z.preprocess(blank, z.enum(STAGES).nullable()),
+  list_price: optNum, listing_start_date: optDate, listing_expiration_date: optDate,
+  listing_mortgage_info: z.preprocess((v) => v === "yes", z.boolean()),
 });
 
 export type ConfirmState = { error?: string } | undefined;
@@ -51,7 +56,7 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
     contacts: (contacts as any[]).filter((c) => c?.full_name?.trim()),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form." };
-  const { agent_member_id, contacts: people, ...terms } = parsed.data;
+  const { agent_member_id, contacts: people, stage, list_price, listing_start_date, listing_expiration_date, listing_mortgage_info, ...terms } = parsed.data;
 
   const { data: tx } = await supabase.from("transactions").select("id, agent_member_id, confirmed_at").eq("id", id).maybeSingle();
   if (!tx) return { error: "Deal not found." };
@@ -64,6 +69,7 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
       terms: { ...terms, property_state: terms.property_state ?? "TX", missing_docs: terms.missing_docs.filter((k) => !terms.addenda.includes(k)) },
       agentMemberId: isBrokerOrStaff ? agent_member_id : tx.agent_member_id ?? member.id,
       contacts: people,
+      ...(stage === "listing" ? { stage, listing: { list_price, listing_start_date, listing_expiration_date, listing_mortgage_info } } : {}),
       event: { kind: firstConfirm ? "confirmed" : "edited" },
     });
   } catch (e) {
@@ -72,6 +78,7 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
 
   // Stamp the draft confirmed (extractions are read-only to users).
   if (firstConfirm) {
+    const listingStart = stage === "listing";
     const admin = supabaseAdmin();
     const { data: ex } = await admin.from("extractions").select("id").eq("transaction_id", id).eq("kind", "initial")
       .eq("status", "ready").order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -79,7 +86,7 @@ export async function confirmTransaction(id: string, _prev: ConfirmState, fd: Fo
 
     // Return match, checked again against what was just confirmed. The offer keeps its written
     // Terms as history; the deal carries the signed ones.
-    const offer = await matchOpenOffer(supabase, {
+    const offer = listingStart ? null : await matchOpenOffer(supabase, {
       property_street: terms.property_street, property_city: terms.property_city, property_zip: terms.property_zip,
       buyers: people.filter((p) => p.role === "buyer").map((p) => p.full_name),
       sales_price: terms.sales_price, earnest_money: terms.earnest_money, option_fee: terms.option_fee,

@@ -48,11 +48,14 @@ export const FIELD_TYPES = {
   buyer_broker_firm: str, buyer_broker_license: str,
   buyer_agent_name: str, buyer_agent_license: str, buyer_agent_email: str, buyer_agent_phone: str,
   lender_name: str,
+  // Listing agreement (TXR-1101 and similar). Kept apart from the contract terms: a list price is never a sales price.
+  list_price: num, listing_start_date: isoDate, listing_expiration_date: isoDate,
+  listing_mortgage_info: z.enum(["yes", "no"]),
 } as const;
 export type FieldKey = keyof typeof FIELD_TYPES;
 export const FIELD_KEYS = Object.keys(FIELD_TYPES) as FieldKey[];
 
-export const DOC_KINDS = ["contract", "amendment", "addendum", "disclosure", "notice", "other"] as const;
+export const DOC_KINDS = ["contract", "listing_agreement", "amendment", "addendum", "disclosure", "notice", "other"] as const;
 const Addendum = z.object({
   key: z.enum(ADDENDUM_KEYS as [string, ...string[]]).catch("other"),
   name: z.string().catch(""),

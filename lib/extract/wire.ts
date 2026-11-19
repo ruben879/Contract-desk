@@ -54,6 +54,10 @@ const FIELDS: Record<FieldKey, [Json, string]> = {
   buyer_agent_name: [S, "Buyer's associate name"], buyer_agent_license: [S, "Buyer's associate license number"],
   buyer_agent_email: [S, "Buyer's associate email"], buyer_agent_phone: [S, "Buyer's associate phone"],
   lender_name: [S, "Lender name if it appears anywhere"],
+  list_price: [N, "Listing agreement only: the listing price. Never put a list price in sales_price."],
+  listing_start_date: [D, "Listing agreement only: the date the listing period begins"],
+  listing_expiration_date: [D, "Listing agreement only: the date the listing period ends (expiration)"],
+  listing_mortgage_info: [{ type: "string", enum: ["yes", "no"] }, "Listing agreement only: 'yes' if it asks the seller to complete the Request for Mortgage Information (or a box for it is checked), 'no' if it plainly does not. Leave out if you can't tell."],
 };
 
 const ADDENDUM = obj({
@@ -130,9 +134,9 @@ const addendum = (a: any) => ({ ...a, form_number: str(a?.form_number), doc: pos
 const documents = (ds: any) => (Array.isArray(ds) ? ds.map((d) => ({ ...d, slot: d?.slot === "none" ? null : d?.slot })) : []);
 
 const RANK = { high: 3, medium: 2, low: 1 } as const;
-const NUMERIC = new Set(["sales_price", "financed_amount", "earnest_money", "option_fee", "option_period_days", "survey_days", "hoa_info_days", "fin_approval_days"]);
+const NUMERIC = new Set(["list_price", "sales_price", "financed_amount", "earnest_money", "option_fee", "option_period_days", "survey_days", "hoa_info_days", "fin_approval_days"]);
 const LISTS = new Set(["buyers", "sellers"]);
-const ENUMS = new Set(["financing_type", "seller_disclosure"]);
+const ENUMS = new Set(["financing_type", "seller_disclosure", "listing_mortgage_info"]);
 
 /** Text from the reader -> the field's own type. Bad values are rejected later by the app schema. */
 export function typedValue(field: string, text: string): unknown {
