@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 export async function orderedDocs(supabase: SupabaseClient, transactionId: string, order: string[] = []) {
   const { data } = await supabase.from("documents")
-    .select("id, file_name, storage_path, page_count, is_scanned, kind, slot, slot_source, created_at")
+    .select("id, file_name, storage_path, page_count, is_scanned, kind, slot, slot_source, held, created_at")
     .eq("transaction_id", transactionId).order("created_at");
   const all = data ?? [];
   const first = order.map((id) => all.find((d) => d.id === id)).filter((d): d is (typeof all)[number] => !!d);

@@ -4,6 +4,7 @@ import { TaskAction } from "@/components/TaskAction";
 import { ReadingPoller, RetryRereadButton } from "@/components/ReadingPoller";
 import { ChecklistToggle, NotNeededButton, TaskMenu } from "@/components/ChecklistToggle";
 import { DocumentSlots } from "@/components/DocumentSlots";
+import { HeldDocument, type Held } from "@/components/HeldDocument";
 import { DEADLINE_DISCLAIMER } from "@/components/DatePreview";
 import { dealStatus, GROUP_LABEL, taskTiming, type TaskGroup } from "@/lib/deal-status";
 import { slotsFor, SLOT_RULES } from "@/lib/slots";
@@ -25,7 +26,8 @@ export type DealViewProps = {
   id: string; tx: any; today: string; timezone: string;
   deadlines: any[]; items: any[]; links: any[]; events: any[];
   lastReread: { id: string; status: string; error: string | null; document_ids: string[] } | null;
-  docs: { id: string; file_name: string; url?: string; slot: string | null; slot_source: string | null; page_count: number | null; is_scanned: boolean | null }[];
+  docs: { id: string; file_name: string; url?: string; slot: string | null; slot_source: string | null; page_count: number | null; is_scanned: boolean | null; held?: Held | null }[];
+  otherDeals?: { id: string; address: string; best: boolean }[];   // for "Wrong deal" on a held document
   rules: DeadlineRule[];
   me: string;
   comments: { id: string; body: string; created_at: string; author_member_id: string }[];
@@ -50,7 +52,10 @@ function More({ id, title, open, children }: { id: string; title: string; open?:
  * The confirmed deal answers three things: where it stands (one line), what needs me next
  * (open tasks), and everything else one tap away.
  */
-export function DealView({ id, tx, today, timezone, deadlines, items, links, events, lastReread, docs, rules, me, comments, team, unreadMentions }: DealViewProps) {
+export function DealView({ id, tx, today, timezone, deadlines, items, links, events, lastReread, docs: allDocs, otherDeals = [], rules, me, comments, team, unreadMentions }: DealViewProps) {
+  // Documents stopped at the door stay out of everything else on the page until the agent decides.
+  const held = allDocs.filter((d) => d.held);
+  const docs = allDocs.filter((d) => !d.held);
   const amendment = lastReread?.status === "ready" ? lastReread : null;
   const rereading = lastReread?.status === "running" || lastReread?.status === "pending";
   const rereadFailed = lastReread?.status === "failed" ? lastReread : null;
@@ -119,6 +124,10 @@ export function DealView({ id, tx, today, timezone, deadlines, items, links, eve
         {isListing && sellers.length > 0 && <div className="text-muted">Sellers: {sellers.join(", ")}</div>}
       </header>
 
+      {held.map((d) => (
+        <HeldDocument key={d.id} doc={{ id: d.id, file_name: d.file_name, url: d.url }} held={d.held!}
+          deals={otherDeals.map((o) => ({ ...o, best: o.best && otherDeals.filter((x) => x.best).length === 1 }))} />
+      ))}
       {amendment && (
         <Card className="mb-4 bg-warn-soft">
           <div className="font-semibold">Review what changed</div>

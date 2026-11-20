@@ -1,11 +1,13 @@
 "use server";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requireMember } from "@/lib/context";
 import { isPdf, MAX_FILE_BYTES, storagePath } from "@/lib/intake";
 import { SLOT_KEYS } from "@/lib/slots";
+import { readAddedDocuments } from "@/lib/extract/run";
 
 type FileMeta = { name: string; size: number; type: string };
 
@@ -100,4 +102,80 @@ export async function discardDraft(transactionId: string) {
   await admin.from("transactions").delete().eq("id", tx.id);
   revalidatePath("/");
   redirect("/");
+}
+
+// ---------- Documents: remove, and the three ways out of a held document (Nov 18 rulings) ----------
+
+/** The document, if this person can see it (RLS), with its deal. */
+async function visibleDoc(documentId: string) {
+  const { supabase, user } = await requireMember();
+  const { data: doc } = await supabase.from("documents")
+    .select("id, brokerage_id, transaction_id, file_name, storage_path, slot, held").eq("id", documentId).maybeSingle();
+  if (!doc?.transaction_id) throw new Error("Document not found.");
+  return { supabase, user, doc: doc as typeof doc & { transaction_id: string } };
+}
+
+function refreshDeal(id: string) {
+  revalidatePath(`/t/${id}`);
+  revalidatePath("/deals");
+  revalidatePath("/");
+}
+
+/**
+ * Remove a document from a deal for good: the file and its row. A change review waiting on it
+ * is set aside, and any other documents in that review are checked again on their own.
+ */
+export async function removeDocument(documentId: string) {
+  const { user, doc } = await visibleDoc(documentId);
+  const admin = supabaseAdmin();
+  const { data: open } = await admin.from("extractions").select("id, document_ids")
+    .eq("transaction_id", doc.transaction_id).eq("kind", "amendment").in("status", ["pending", "ready"]);
+  const affected = (open ?? []).filter((e) => (e.document_ids as string[]).includes(doc.id));
+  for (const e of affected) await admin.from("extractions").update({ status: "dismissed", error: "A document in it was removed" }).eq("id", e.id);
+  const rest = [...new Set(affected.flatMap((e) => (e.document_ids as string[]).filter((x) => x !== doc.id)))];
+
+  const { error } = await admin.from("documents").delete().eq("id", doc.id);
+  if (error) throw new Error("Couldn't remove it. Try again.");
+  await admin.storage.from("documents").remove([doc.storage_path]);
+  await admin.from("transaction_events").insert({
+    brokerage_id: doc.brokerage_id, transaction_id: doc.transaction_id, kind: "document_removed", actor: user.id,
+    summary: `Removed ${doc.file_name}${doc.held ? " (it didn't match this deal)" : ""}`,
+  });
+  if (rest.length) after(() => readAddedDocuments(doc.transaction_id, rest).catch((e) => console.error("[remove reread]", e)));
+  refreshDeal(doc.transaction_id);
+}
+
+/** "Keep it on this deal anyway": the agent overrides the door. It's then read for changes like any other document. */
+export async function keepHeldDocument(documentId: string) {
+  const { user, doc } = await visibleDoc(documentId);
+  if (!doc.held) return;
+  const slot = (doc.held as { slot?: string | null }).slot ?? null;
+  const admin = supabaseAdmin();
+  await admin.from("documents").update({
+    held: null, held_override: true, ...(slot ? { slot, slot_source: "agent" } : {}),
+  }).eq("id", doc.id);
+  await admin.from("transaction_events").insert({
+    brokerage_id: doc.brokerage_id, transaction_id: doc.transaction_id, kind: "document_kept", actor: user.id,
+    summary: `Kept ${doc.file_name} on this deal although it doesn't match`, document_ids: [doc.id],
+  });
+  after(() => readAddedDocuments(doc.transaction_id, [doc.id]).catch((e) => console.error("[keep reread]", e)));
+  refreshDeal(doc.transaction_id);
+}
+
+/** "Wrong deal": move it to the deal it belongs to, where it's checked like a new arrival (and held again if it doesn't fit there either). */
+export async function moveHeldDocument(documentId: string, targetId: string) {
+  const { supabase, user, doc } = await visibleDoc(documentId);
+  if (targetId === doc.transaction_id) throw new Error("Pick a different deal.");
+  const { data: target } = await supabase.from("transactions").select("id, status, property_street").eq("id", targetId).maybeSingle();
+  if (!target || ["closed", "cancelled"].includes(target.status)) throw new Error("That deal isn't open.");
+  const admin = supabaseAdmin();
+  await admin.from("documents").update({ transaction_id: target.id, held: null, held_override: false, slot: null, slot_source: null }).eq("id", doc.id);
+  await admin.from("transaction_events").insert({
+    brokerage_id: doc.brokerage_id, transaction_id: doc.transaction_id, kind: "document_moved", actor: user.id,
+    summary: `Moved ${doc.file_name} to ${target.property_street ?? "another deal"}`,
+  });
+  after(() => readAddedDocuments(target.id, [doc.id]).catch((e) => console.error("[move reread]", e)));
+  refreshDeal(doc.transaction_id);
+  refreshDeal(target.id);
+  redirect(`/t/${target.id}`);
 }

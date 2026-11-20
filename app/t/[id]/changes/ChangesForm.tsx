@@ -48,6 +48,7 @@ export function ChangesForm(props: {
   routed: { from: string | null; subject: string | null; auto: boolean } | null;
   listing?: boolean;    // the deal is in the Listing stage
   promotes?: boolean;   // these documents include the executed contract: confirming moves it under contract
+  heading: { title: string; body: string; tone: "warn" | "bad" | "plain" };   // lib/review-heading.ts: follows the finding
 }) {
   const { proposed, current } = props;
   const [state, action, pending] = useActionState<ChangesState, FormData>(confirmChanges.bind(null, props.transactionId, props.extractionId), undefined);
@@ -90,14 +91,8 @@ export function ChangesForm(props: {
   return (
     <form action={action}>
       <div className="text-sm text-muted">{props.address}</div>
-      <h1 className="text-xl font-bold">{props.promotes ? "Confirm the contract" : nothing ? "Check this document" : "Confirm what changed"}</h1>
-      <p className="mt-1 text-sm text-muted">
-        From {props.docNames.join(", ")}. {props.promotes
-          ? "This is the executed contract for this listing. Confirming moves the deal from Listing to Under contract and builds the contract checklist and dates. The listing tasks stay."
-          : nothing
-          ? "We didn't find any change to price, dates, or terms. Look it over and confirm it belongs on this deal."
-          : "Nothing changes on the deal until you confirm."}
-      </p>
+      <h1 className={cx("text-xl font-bold", props.heading.tone === "bad" && "text-bad")}>{props.heading.title}</h1>
+      <p className={cx("mt-1 text-sm", props.heading.tone === "bad" ? "font-medium text-ink" : "text-muted")}>{props.heading.body}</p>
       {props.routed && (
         <Card className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
           <span className="text-muted">

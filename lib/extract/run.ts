@@ -4,6 +4,8 @@ import { termsFromTx } from "@/lib/terms";
 import { inspectPdf } from "./pdf";
 import { readChanges, readContract, type PdfInput } from "./read-contract";
 import { friendlyReadError, ReaderError } from "./errors";
+import { matchDocument } from "@/lib/match";
+import type { ChangeResult } from "./schema";
 
 // The reader accepts requests up to 32 MB, and PDFs grow by a third when encoded, so ~22 MB of PDFs per read.
 const MAX_TOTAL_BYTES = 22 * 1024 * 1024;
@@ -148,18 +150,43 @@ export async function runAmendmentRead(
   if (error || !ex) throw new Error(error?.message ?? "Could not start reading.");
 
   try {
-    const { data: docs } = await db.from("documents").select("id, file_name, storage_path, size_bytes").in("id", ids).eq("transaction_id", tx.id);
-    const ordered = ids.map((id) => docs?.find((d) => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d);
+    const { data: docs } = await db.from("documents").select("id, file_name, storage_path, size_bytes, slot, slot_source, held, held_override").in("id", ids).eq("transaction_id", tx.id);
+    let ordered = ids.map((id) => docs?.find((d) => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d && !d.held);
     if (!ordered.length) throw new ReaderError("The documents to check weren't found. Add them again.");
 
-    const { changes, model } = await readChanges(base, await loadPdfs(db, ordered), { listing: tx.stage === "listing" });
+    let { changes, model } = await readChanges(base, await loadPdfs(db, ordered), { listing: tx.stage === "listing" });
+
+    // Stop at the door (Ruben, Nov 18): a document that matches this deal on nothing is held,
+    // never filed, never read for changes. The agent decides what happens to it.
+    const deal = await dealIdentity(db, tx);
+    const held = holdMismatches(ordered, changes, deal);
+    for (const h of held) {
+      await db.from("documents").update({ held: h.held, slot: null, slot_source: null, kind: h.kind }).eq("id", h.id);
+    }
+    if (held.length) {
+      ordered = ordered.filter((d) => !held.some((h) => h.id === d.id));
+      if (!ordered.length) {
+        await db.from("extractions").update({
+          status: "dismissed", error: "Doesn't match this deal", document_ids: ids.filter((id) => !held.some((h) => h.id === id)),
+          result: changes, model, finished_at: new Date().toISOString(),
+        }).eq("id", ex.id);
+        return;
+      }
+      // Read the rest again on their own, so nothing from the held document reaches the review.
+      ({ changes, model } = await readChanges(base, await loadPdfs(db, ordered), { listing: tx.stage === "listing" }));
+      await db.from("extractions").update({ document_ids: ordered.map((d) => d.id) }).eq("id", ex.id);
+    }
+    // Documents the agent kept here on purpose: the review says so, rather than a generic script.
+    const kept = ordered.map((d, i) => ({ d, i })).filter(({ d }) => d.held_override)
+      .map(({ d, i }) => ({ file_name: d.file_name, ...(changes.seen.find((x) => x.doc === i + 1) ?? { property_street: null, parties: [], price: null }) }));
+    if (kept.length) changes = { ...changes, kept_mismatch: kept };
     await labelDocuments(db, ordered.map((d) => d.id), changes.documents);
 
     const somethingChanged = changes.changes.length > 0 || changes.addenda_added.length > 0 || changes.addenda_removed.length > 0;
     // An amendment with "no changes" still goes to the agent: a missed change is worse than an extra tap.
     const isAmendment = changes.documents.some((d) => d.kind === "amendment");
     // Anything routed in by email always goes to the agent: they should see what landed on their deal.
-    const needsAgent = source === "email" || somethingChanged || isAmendment || changes.warnings.length > 0;
+    const needsAgent = source === "email" || somethingChanged || isAmendment || changes.warnings.length > 0 || kept.length > 0;
 
     await db.from("extractions").update({
       status: needsAgent ? "ready" : "dismissed",
@@ -171,4 +198,43 @@ export async function runAmendmentRead(
     console.error("[read] failed", { transactionId, detail });
     await db.from("extractions").update({ status: "failed", error: message, result: { debug: detail }, finished_at: new Date().toISOString() }).eq("id", ex.id);
   }
+}
+
+
+/** What identifies this deal: its street, the buyers' and sellers' names, and its price. */
+export async function dealIdentity(db: Db, tx: { id: string; property_street: string | null; sales_price: number | string | null; list_price?: number | string | null }) {
+  const { data: links } = await db.from("transaction_contacts").select("role, contacts(full_name)").eq("transaction_id", tx.id);
+  const parties = (links ?? []).filter((l: any) => l.role === "buyer" || l.role === "seller")
+    .map((l: any) => (Array.isArray(l.contacts) ? l.contacts[0] : l.contacts)?.full_name).filter(Boolean) as string[];
+  const price = tx.sales_price != null ? Number(tx.sales_price) : tx.list_price != null ? Number(tx.list_price) : null;
+  return { property_street: tx.property_street, parties, price };
+}
+
+/** Which of these documents to hold, and what to show the agent about each. Kept-anyway documents pass. */
+export function holdMismatches(
+  ordered: { id: string; file_name: string; slot: string | null; held_override: boolean }[],
+  changes: Pick<ChangeResult, "seen" | "documents" | "summary">,
+  deal: { property_street: string | null; parties: string[]; price: number | null },
+) {
+  const out: { id: string; kind: string | null; held: Record<string, unknown> }[] = [];
+  ordered.forEach((d, i) => {
+    if (d.held_override) return;
+    const seen = changes.seen.find((x) => x.doc === i + 1);
+    if (!seen) return;
+    const m = matchDocument(seen, deal);
+    if (!m.mismatch) return;
+    const label = changes.documents.find((x) => x.doc === i + 1);
+    out.push({
+      id: d.id, kind: label?.kind ?? null,
+      held: {
+        at: new Date().toISOString(),
+        looks_like: label?.name || null,
+        seen: { property_street: seen.property_street, parties: seen.parties, price: seen.price },
+        deal: { property_street: deal.property_street, parties: deal.parties, price: deal.price },
+        verdict: { address: m.address, parties: m.parties, price: m.price },
+        slot: d.slot, // where it was dropped, restored if the agent keeps it here
+      },
+    });
+  });
+  return out;
 }

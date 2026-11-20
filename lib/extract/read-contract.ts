@@ -40,6 +40,7 @@ Rules:
 - If a document doesn't change any term (an inspection report, an HOA document, a receipt), report no changes and just classify it in "documents".
 - Never guess. Unclear handwriting gets confidence "low" and a warning. Missing signatures or initials get a warning.
 - Changes you can't map to a field (repair lists, special provisions) go in warnings in one short line each.
+- For every document, fill "seen" with the property address, the buyer and seller names, and the price written on it, even when they differ from the current terms. If a document is about a different property or different parties, report no changes from it: it may have been added to the wrong deal.
 
 ${LOCATION_RULES}`;
 
