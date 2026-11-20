@@ -15,7 +15,7 @@ type Row = {
   property_street: string | null; property_city: string | null; sales_price: number | null; list_price: number | null;
   deadlines: { key: string; label: string; due_date: string }[];
   checklist_items: { title: string; status: string; deadline_key: string | null; sort: number }[];
-  documents: { file_name: string; held: unknown }[];
+  documents: { file_name: string }[];
 };
 
 type Tone = "bad" | "warn" | "muted";
@@ -42,14 +42,22 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
   await expireStaleReads(brokerage.id);
   const today = todayIn(brokerage.timezone);
 
-  const [{ data }, { data: pending }, { data: offers }] = await Promise.all([
+  // Nov 20 fix: the deals query must not depend on documents.held (migration 0013). When that column
+  // was missing, the whole query errored, the error was ignored, and Deals showed 0. The held count
+  // now comes from its own query, and a failed deals query says so instead of "No open deals yet".
+  const [{ data, error: dealsError }, { data: pending }, { data: offers }, { data: heldDocs }] = await Promise.all([
     supabase.from("transactions")
-      .select("id, status, stage, listing_expiration_date, property_street, property_city, sales_price, list_price, deadlines(key, label, due_date), checklist_items(title, status, deadline_key, sort), documents(file_name, held)")
+      .select("id, status, stage, listing_expiration_date, property_street, property_city, sales_price, list_price, deadlines(key, label, due_date), checklist_items(title, status, deadline_key, sort), documents(file_name)")
       .in("status", ["reading", "needs_review", "failed", "active"]).order("created_at", { ascending: false }).returns<Row[]>(),
     supabase.from("extractions").select("transaction_id").eq("kind", "amendment").eq("status", "ready"),
     // Offers not yet executed. Tolerates the offers table not existing yet (before migration 0009).
     supabase.from("offers").select("id, status, terms, edited_since_export, updated_at").neq("status", "executed").order("updated_at", { ascending: false }).limit(50),
+    // Documents stopped at the door. If this fails (e.g. before migration 0013), the list still shows.
+    supabase.from("documents").select("transaction_id").not("held", "is", null),
   ]);
+  if (dealsError) console.error("[deals] couldn't load deals:", dealsError.message);
+  const heldCount = new Map<string, number>();
+  for (const d of heldDocs ?? []) heldCount.set(d.transaction_id, (heldCount.get(d.transaction_id) ?? 0) + 1);
   const amended = new Set((pending ?? []).map((p) => p.transaction_id));
 
   const deals = (data ?? []).map((r) => {
@@ -59,7 +67,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
       .filter((i) => i.status === "open" && i.deadline_key && (due.get(i.deadline_key) ?? "9999") < today)
       .sort((a, b) => due.get(a.deadline_key!)!.localeCompare(due.get(b.deadline_key!)!) || a.sort - b.sort);
     const next = r.deadlines.filter((d) => d.due_date >= today).sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
-    const held = r.documents.filter((d) => d.held).length;
+    const held = heldCount.get(r.id) ?? 0;
 
     const listing = r.stage === "listing";
     const price = listing ? (r.list_price != null ? `List ${money(Number(r.list_price))}` : null) : (r.sales_price != null ? money(Number(r.sales_price)) : null);
@@ -106,7 +114,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
 
       <nav aria-label="Deals or offers" className="mb-4 flex gap-1 rounded-xl bg-brand-soft p-1">
         <Link href="/deals" aria-current={tab === "deals" ? "page" : undefined} className={tabCls(tab === "deals")}>
-          Deals <span className="font-normal text-muted">{deals.length}</span>
+          Deals <span className="font-normal text-muted">{dealsError ? "" : deals.length}</span>
         </Link>
         <Link href="/deals?tab=offers" aria-current={tab === "offers" ? "page" : undefined} className={tabCls(tab === "offers")}>
           Offers <span className="font-normal text-muted">{offerCards.length}</span>
@@ -115,7 +123,9 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
 
       {tab === "deals" ? (
         <>
-          {deals.length === 0
+          {dealsError
+            ? <p className="mt-6 font-medium text-bad">Couldn't load your deals. Refresh to try again; if it keeps happening, tell Ruben.</p>
+            : deals.length === 0
             ? <p className="mt-6 text-muted">No open deals yet. Tap New and start from a contract.</p>
             : <ul className="space-y-2.5">{deals.map((d) => <DealCard key={d.id} href={`/t/${d.id}`} address={d.address} status={d.status} step={d.step} tone={d.tone} />)}</ul>}
           <div className="mt-5">
