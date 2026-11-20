@@ -55,6 +55,16 @@ Next.js 15 (App Router) on Vercel, Supabase (Postgres, Auth, Storage), Claude fo
 - When an executed purchase contract is added and confirmed (Review changes), the deal moves to the contract stage: the contract checklist and deadlines build exactly as for a contract-started deal, and the listing tasks stay, done or carried over.
 - Contract-started deals are untouched: every existing deal is stage `contract` by default.
 
+## Deals page, sign-in, and the document door (Nov 20, from Ruben's Nov 18 rulings)
+
+- **Deals** has two tabs, Deals and Offers, and one **New** button: "Start from a contract" or "Write an offer". Filling an offer from a document or Ren's terms file happens inside the offer. A quiet drop target sits under the list.
+- **Sign-in** opens on the password form; "Email me a code instead" sits under it.
+- **The document door** (`lib/match.ts`, `runAmendmentRead` in `lib/extract/run.ts`): a document added to a deal that matches it on nothing (address differs, and parties or price differ, and nothing matches) is held. It isn't filed, isn't read for changes, and touches no checklist. The deal page shows it in red with three ways out: Wrong deal, Remove it, Keep it on this deal anyway.
+- **Change reviews** take their heading from what the read found (`lib/review-heading.ts`), never a generic line.
+- **Remove** sits on every filed document, with a confirm. It deletes the file and the row and notes it in History.
+- **Duplicate offers**: an offer page shows any other open offer on the same address; a duplicate draft can be deleted there.
+- **Storage hygiene**: `scripts/purge-orphaned-files.mjs` lists files in the documents bucket with no row (`--delete` removes them). Run it with the live keys in your own shell.
+
 ## Planned next
 
 Email intake moves from Postmark to Cloudflare after the first live test: see `docs/intake-cloudflare-spec.md`.

@@ -9,6 +9,7 @@ import { proposeChanges, termsFromTx } from "@/lib/terms";
 import type { DeadlineRule } from "@/lib/deadlines/compute";
 import { ChangesForm } from "./ChangesForm";
 import { nextStage } from "@/lib/stage";
+import { reviewHeading } from "@/lib/review-heading";
 
 export default async function ChangesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,6 +41,11 @@ export default async function ChangesPage({ params }: { params: Promise<{ id: st
     ? await supabaseAdmin().from("intake_items").select("from_email, subject, status").eq("id", ex.intake_item_id).maybeSingle()
     : { data: null };
   const routed = item ? { from: item.from_email, subject: item.subject, auto: item.status === "matched" } : null;
+  const promotes = tx.stage === "listing" && nextStage({ current: "listing", firstConfirm: false, documents: result.documents }) === "contract";
+  const heading = reviewHeading({
+    docNames: docs.map((d) => d.file_name), dealStreet: tx.property_street, seen: result.seen, kept: result.kept_mismatch,
+    promotes, nothing: proposed.length === 0 && added.length === 0 && removed.length === 0,
+  });
 
   return (
     <AppShell brokerage={brokerage.name} logoUrl={brokerage.logo_url} showSettings={isBrokerOrStaff} wide>
@@ -59,7 +65,8 @@ export default async function ChangesPage({ params }: { params: Promise<{ id: st
           currentDeadlines={deadlines ?? []}
           currentTasks={items ?? []}
           routed={routed}
-          promotes={tx.stage === "listing" && nextStage({ current: "listing", firstConfirm: false, documents: result.documents }) === "contract"}
+          promotes={promotes}
+          heading={heading}
           listing={tx.stage === "listing"}
         />
       </SourceLayout>

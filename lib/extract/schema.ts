@@ -94,8 +94,17 @@ export const ChangeSchema = z.object({
   addenda_added: z.array(Addendum).catch([]),
   addenda_removed: z.array(z.enum(ADDENDUM_KEYS as [string, ...string[]])).catch([]),
   documents: z.array(DocKind).catch([]),
+  // Which deal each document says it's for (lib/match.ts). Older reads don't have it.
+  seen: z.array(z.object({
+    doc: z.number().int(), property_street: z.string().nullable().catch(null),
+    parties: z.array(z.string()).catch([]), price: z.number().nullable().catch(null),
+  })).catch([]),
   summary: z.string().catch(""),
   warnings: z.array(z.string()).catch([]),
+  // Set by the app, not the reader: documents the agent kept here although they don't match.
+  kept_mismatch: z.array(z.object({
+    file_name: z.string(), property_street: z.string().nullable(), parties: z.array(z.string()), price: z.number().nullable(),
+  })).optional(),
 });
 export type ChangeResult = z.infer<typeof ChangeSchema>;
 

@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState, useTransition } from "react";
-import { moveDocument, startAddDocuments } from "@/app/actions";
+import { moveDocument, removeDocument, startAddDocuments } from "@/app/actions";
 import { ACCEPT, useUploader } from "./Dropzone";
 import { Badge, cx } from "./ui";
 
@@ -23,6 +23,30 @@ function MoveSelect({ doc, slots }: { doc: Doc; slots: Slot[] }) {
   );
 }
 
+// Remove, with a confirm right on the line (Ruben, Nov 18: there was no way to take a document off a deal).
+function RemoveDoc({ doc }: { doc: Doc }) {
+  const [asking, setAsking] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  if (!asking) {
+    return (
+      <button type="button" onClick={() => setAsking(true)}
+        className="rounded-md px-1.5 py-0.5 text-xs font-medium text-bad hover:bg-bad-soft">Remove</button>
+    );
+  }
+  return (
+    <span className="flex w-full flex-wrap items-center gap-2 rounded-lg bg-bad-soft px-2 py-1.5 text-xs text-ink">
+      <span className="font-medium">Remove this document from the deal? It can't be undone.</span>
+      <button type="button" disabled={pending} className="rounded-md bg-bad px-2 py-1 font-semibold text-white disabled:opacity-60"
+        onClick={() => start(async () => { try { await removeDocument(doc.id); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't remove it."); } })}>
+        {pending ? "Removing…" : "Remove"}
+      </button>
+      <button type="button" disabled={pending} onClick={() => { setAsking(false); setErr(null); }} className="px-1 font-medium text-muted">Cancel</button>
+      {err && <span className="w-full text-bad">{err}</span>}
+    </span>
+  );
+}
+
 function DocLine({ d, slots }: { d: Doc; slots: Slot[] }) {
   return (
     <li className="text-sm">
@@ -31,6 +55,7 @@ function DocLine({ d, slots }: { d: Doc; slots: Slot[] }) {
         {d.page_count ? <span>{d.page_count} page{d.page_count === 1 ? "" : "s"}{d.is_scanned ? " · scan" : ""}</span> : null}
         {d.slot_source === "reader" && <Badge tone="neutral">Filed by reader</Badge>}
         <MoveSelect doc={d} slots={slots} />
+        <RemoveDoc doc={d} />
       </div>
     </li>
   );

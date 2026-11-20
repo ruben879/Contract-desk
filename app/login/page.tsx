@@ -5,7 +5,7 @@ import { Button, Card, inputCls } from "@/components/ui";
 import { APP_NAME } from "@/lib/brand";
 import { requestSignIn } from "./actions";
 
-// Sign in without leaving the app: an emailed code typed right here, or a password.
+// Sign in without leaving the app: password first (Ruben, Nov 18), with an emailed code under it.
 // (Links open in Safari, not in the home-screen app, so they sign in the wrong place on iPhone.)
 
 type Step = "email" | "code" | "password";
@@ -22,7 +22,7 @@ function sendError(error: { status?: number; code?: string; message: string }) {
 const EMAIL_KEY = "cd:last-email";
 
 export default function Login() {
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>("password");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -39,11 +39,12 @@ export default function Login() {
     if (access_token && refresh_token) {
       setBusy(true);
       sb.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
-        if (error) { setBusy(false); setError("That link didn't work. Enter your email to get a new one."); history.replaceState(null, "", "/login"); }
+        if (error) { setBusy(false); setStep("email"); setError("That link didn't work. Enter your email to get a new one."); history.replaceState(null, "", "/login"); }
         else window.location.replace("/");
       });
       return;
     }
+    if (hash.get("error_code") || hash.get("error") || new URLSearchParams(window.location.search).get("error") === "link") setStep("email");
     if (hash.get("error_code") === "otp_expired") setError("That link expired or was already used. Enter your email to get a new one.");
     else if (hash.get("error")) setError("That link didn't work. Enter your email to get a new one.");
     else if (new URLSearchParams(window.location.search).get("error") === "link")
@@ -85,6 +86,20 @@ export default function Login() {
       <h1 className="mb-1 text-2xl font-bold text-brand">{APP_NAME}</h1>
       <p className="mb-6 text-muted">Contracts in. Checklist out.</p>
       <Card>
+        {step === "password" && (
+          <form onSubmit={withPassword} className="space-y-3">
+            <label className="block text-sm font-medium" htmlFor="email2">Work email</label>
+            <input id="email2" className={inputCls} type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <label className="block text-sm font-medium" htmlFor="pw">Password</label>
+            <input id="pw" className={inputCls} type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Button size="lg" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</Button>
+            <button type="button" onClick={() => { setError(null); setStep("email"); }} className="w-full text-center text-sm font-medium text-brand">
+              Email me a code instead
+            </button>
+            <p className="text-center text-xs text-muted">No password yet? Sign in with a code, then set one on your profile.</p>
+          </form>
+        )}
+
         {step === "email" && (
           <form onSubmit={sendCode} className="space-y-3">
             <label className="block text-sm font-medium" htmlFor="email">Work email</label>
@@ -112,20 +127,6 @@ export default function Login() {
               <button type="button" disabled={busy} onClick={() => sendCode()} className="font-medium text-brand">Send a new code</button>
               <button type="button" onClick={() => { setError(null); setStep("email"); }} className="text-muted">Different email</button>
             </div>
-          </form>
-        )}
-
-        {step === "password" && (
-          <form onSubmit={withPassword} className="space-y-3">
-            <label className="block text-sm font-medium" htmlFor="email2">Work email</label>
-            <input id="email2" className={inputCls} type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-            <label className="block text-sm font-medium" htmlFor="pw">Password</label>
-            <input id="pw" className={inputCls} type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-            <Button size="lg" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</Button>
-            <button type="button" onClick={() => { setError(null); setStep("email"); }} className="w-full text-center text-sm font-medium text-brand">
-              Email me a code instead
-            </button>
-            <p className="text-center text-xs text-muted">No password yet? Sign in with a code, then set one on your profile.</p>
           </form>
         )}
 

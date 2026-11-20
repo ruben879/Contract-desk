@@ -109,7 +109,17 @@ export const changesFormat = schemaOf({
   addenda_added: { type: "array", items: ADDENDUM, description: "Addenda or disclosures newly added to the deal by these documents (e.g. a signed Seller's Disclosure, a new financing addendum)" },
   addenda_removed: { type: "array", items: { type: "string", enum: [...ADDENDUM_KEYS] }, description: "Addenda these documents remove or terminate" },
   documents: DOCUMENTS,
-  summary: { type: "string", description: "One plain sentence: what these documents do. E.g. 'Amendment moves closing to Dec 11 and lowers the price to $312,000.'" },
+  seen: {
+    type: "array",
+    description: "One entry per document: what it says about WHICH deal it is for, as written on it, whether or not it matches the current terms. Used to catch a document added to the wrong deal.",
+    items: obj({
+      doc: I,
+      property_street: { type: "string", description: "House number and street of the property this document is about, exactly as written. Empty if none." },
+      parties: { type: "array", items: S, description: "Buyer and seller names on this document (people or companies). Empty if none." },
+      price: { type: "number", description: "Sales price (or list price) this document states. 0 if none." },
+    }),
+  },
+  summary: { type: "string", description: "One plain sentence: what these documents do. E.g. 'Amendment moves closing to Dec 11 and lowers the price to $312,000.' If a document is for a different property than the current terms, say so plainly." },
   warnings: { type: "array", items: S, description: "Missing signatures or initials, unclear handwriting, terms you could not map to a field (e.g. repair lists)." },
 });
 
@@ -170,7 +180,13 @@ export function changesFromWire(raw: any) {
     const value = typedValue(c?.key, typeof c?.value_text === "string" ? c.value_text : "");
     return { key: c?.key, value, confidence: c?.confidence, ...loc(c) };
   });
-  return { ...raw, changes, addenda_added: (raw?.addenda_added ?? []).map(addendum), documents: documents(raw?.documents) };
+  const seen = (raw?.seen ?? []).map((x: any) => ({
+    doc: Number(x?.doc) || 0,
+    property_street: typeof x?.property_street === "string" && x.property_street.trim() ? x.property_street.trim() : null,
+    parties: Array.isArray(x?.parties) ? x.parties.filter((p: unknown) => typeof p === "string" && p.trim()).map((p: string) => p.trim()) : [],
+    price: typeof x?.price === "number" && x.price > 0 ? x.price : null,
+  }));
+  return { ...raw, changes, addenda_added: (raw?.addenda_added ?? []).map(addendum), documents: documents(raw?.documents), seen };
 }
 
 export function triageFromWire(raw: any) {

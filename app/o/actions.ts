@@ -139,3 +139,15 @@ export async function startDocumentFill(): Promise<{ path: string; token: string
   if (error || !data) throw new Error("Couldn't start the upload.");
   return { path, token: data.token };
 }
+
+/** Throw away a draft offer (a duplicate start, a mistake). Exported offers can't be deleted here. */
+export async function deleteDraftOffer(id: string) {
+  const { supabase } = await requireMember();
+  const offer = await loadOffer(supabase, id);
+  if (!offer) throw new Error("Offer not found.");
+  if (offer.status !== "draft_offer") throw new Error("Only a draft can be deleted. This one was exported.");
+  const { error } = await supabase.from("offers").delete().eq("id", id);
+  if (error) throw new Error("Couldn't delete it. Try again.");
+  revalidatePath("/deals");
+  redirect("/deals?tab=offers");
+}

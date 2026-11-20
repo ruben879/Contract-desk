@@ -12,6 +12,7 @@ import { orderedDocs } from "@/lib/docs";
 import { todayIn } from "@/lib/dates";
 import { displayError } from "@/lib/extract/errors";
 import { DiscardDraft } from "@/components/DiscardDraft";
+import { compareStreet } from "@/lib/match";
 
 export default async function TransactionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -69,12 +70,23 @@ export default async function TransactionPage({ params }: { params: Promise<{ id
     supabase.from("comment_mentions").select("comment_id").eq("transaction_id", id).eq("member_id", member.id).is("read_at", null),
   ]);
   const docs = await orderedDocs(supabase, id);
+  // Only when a document was stopped at the door: the other open deals, so "Wrong deal" can move it.
+  const heldStreets = docs.map((d) => (d.held as any)?.seen?.property_street as string | null | undefined).filter(Boolean) as string[];
+  const { data: open } = docs.some((d) => d.held)
+    ? await supabase.from("transactions").select("id, property_street, property_city, documents(file_name)")
+      .neq("id", id).in("status", ["reading", "needs_review", "failed", "active"]).order("created_at", { ascending: false })
+    : { data: [] };
+  const otherDeals = (open ?? []).map((o: any) => ({
+    id: o.id as string,
+    address: o.property_street ? [o.property_street, o.property_city].filter(Boolean).join(", ") : `New deal (${o.documents?.[0]?.file_name ?? "reading"})`,
+    best: heldStreets.some((s) => compareStreet(s, o.property_street) === "match"),
+  })).sort((a, b) => Number(b.best) - Number(a.best));
   return shell(
     <DealView id={id} tx={tx} today={todayIn(brokerage.timezone)} timezone={brokerage.timezone}
       deadlines={deadlines ?? []} items={items ?? []} links={links ?? []} events={events ?? []}
-      lastReread={lastReread ?? null}
+      lastReread={lastReread ?? null} otherDeals={otherDeals}
       rules={rules ?? []} me={member.id} comments={comments ?? []} team={team ?? []}
       unreadMentions={(myMentions ?? []).map((m) => m.comment_id)}
-      docs={docs.map((d) => ({ id: d.id, file_name: d.file_name, url: d.url, slot: d.slot, slot_source: d.slot_source, page_count: d.page_count, is_scanned: d.is_scanned }))} />,
+      docs={docs.map((d) => ({ id: d.id, file_name: d.file_name, url: d.url, slot: d.slot, slot_source: d.slot_source, page_count: d.page_count, is_scanned: d.is_scanned, held: (d.held as any) ?? null }))} />,
   );
 }

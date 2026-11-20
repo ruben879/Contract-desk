@@ -62,8 +62,9 @@ export function useUploader(start: Starter, then: "read" | "reread") {
   return { upload, busy, error };
 }
 
-export function Dropzone({ start, then = "read", label, hint, compact }: {
+export function Dropzone({ start, then = "read", label, hint, compact, slim }: {
   start: Starter; then?: "read" | "reread"; label: string; hint?: string; compact?: boolean;
+  slim?: boolean; // a quiet one-line drop target (Deals page, below the list)
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -80,11 +81,11 @@ export function Dropzone({ start, then = "read", label, hint, compact }: {
         disabled={!!busy}
         className={cx(
           "w-full rounded-2xl border-2 border-dashed text-center transition",
-          compact ? "px-4 py-4" : "px-4 py-10",
+          slim ? "px-4 py-2.5" : compact ? "px-4 py-4" : "px-4 py-10",
           over ? "border-brand bg-brand-soft" : "border-line bg-white hover:border-brand",
         )}
       >
-        <div className={cx("font-semibold text-brand", !compact && "text-lg")}>{busy ?? label}</div>
+        <div className={cx(slim ? "text-sm font-medium text-muted" : "font-semibold text-brand", !compact && !slim && "text-lg")}>{busy ?? label}</div>
         {hint && !busy && <div className="mt-1 text-sm text-muted">{hint}</div>}
       </button>
       <input ref={input} type="file" accept={ACCEPT} multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />

@@ -89,5 +89,21 @@ export function pgSupabase(db: PGlite) {
     };
     return b;
   }
-  return { from } as any;
+  // In-memory storage: enough for download/remove/upload in the document flows.
+  const files = new Map<string, Uint8Array>();
+  const removed: string[] = [];
+  const storage = {
+    files, removed,
+    from: (bucket: string) => ({
+      async download(p: string) {
+        const b = files.get(`${bucket}/${p}`);
+        return b ? { data: new Blob([b as Uint8Array<ArrayBuffer>]), error: null } : { data: null, error: { message: "not found" } };
+      },
+      async upload(p: string, bytes: Uint8Array) { files.set(`${bucket}/${p}`, bytes); return { data: { path: p }, error: null }; },
+      async remove(paths: string[]) { for (const p of paths) { files.delete(`${bucket}/${p}`); removed.push(`${bucket}/${p}`); } return { data: [], error: null }; },
+      async createSignedUrl(p: string) { return { data: { signedUrl: `https://files.test/${bucket}/${p}` }, error: null }; },
+      async createSignedUploadUrl(p: string) { return { data: { path: p, token: "t" }, error: null }; },
+    }),
+  };
+  return { from, storage } as any;
 }
